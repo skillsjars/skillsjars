@@ -59,12 +59,12 @@ object SkillsJarService:
       results.flatten
 
   private def scanRepoForSkillsJars(repoGroupId: MavenCentral.GroupId): ZIO[Client & Scope, Throwable, Seq[SkillsJar]] =
-    for
-      entries <- MavenCentral.searchArtifacts(repoGroupId)
+    defer:
+      val entries = MavenCentral.searchArtifacts(repoGroupId)
         .map(_.value)
-        .catchAll(_ => ZIO.succeed(Seq.empty))
-      results <- ZIO.foreach(entries)(entry => processEntry(repoGroupId, entry))
-    yield results.flatten
+        .catchAll(_ => ZIO.succeed(Seq.empty)).run
+      val results = ZIO.foreach(entries)(entry => processEntry(repoGroupId, entry)).run
+      results.flatten
 
   private def processEntry(repoGroupId: MavenCentral.GroupId, entry: MavenCentral.ArtifactId): ZIO[Client & Scope, Throwable, Seq[SkillsJar]] =
     MavenCentral.isArtifact(repoGroupId, entry)
@@ -79,13 +79,14 @@ object SkillsJarService:
             .catchAll(_ => ZIO.succeed(Seq.empty))
 
   private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): ZIO[Client & Scope, Throwable, SkillsJar] =
-    for
-      versions <- MavenCentral.searchVersions(groupId, artifactId).map(_.value)
-        .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.Version]))
-      nameAndDesc <- versions.headOption.fold(ZIO.succeed((artifactId.toString, ""))): latestVersion =>
+    defer:
+      val versions = MavenCentral.searchVersions(groupId, artifactId).map(_.value)
+        .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.Version])).run
+      val nameAndDesc = versions.headOption.fold(ZIO.succeed((artifactId.toString, ""))): latestVersion =>
         MavenCentral.pom(groupId, artifactId, latestVersion).map: pomXml =>
           val n = (pomXml \ "name").text
           val d = (pomXml \ "description").text
           (if n.nonEmpty then n else artifactId.toString, if d.nonEmpty then d else "")
         .catchAll(_ => ZIO.succeed((artifactId.toString, "")))
-    yield SkillsJar(groupId, artifactId, versions, nameAndDesc._1, nameAndDesc._2)
+      .run
+      SkillsJar(groupId, artifactId, versions, nameAndDesc._1, nameAndDesc._2)

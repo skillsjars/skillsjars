@@ -11,7 +11,6 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneOffset}
 import scala.jdk.CollectionConverters.*
 
-// todo: integration tests
 object GitService:
 
   case class RepoInfo(
@@ -21,34 +20,32 @@ object GitService:
   )
 
   // any reason to keep the dir around longer?
-  def cloneAndScan(org: Org, repo: Repo): ZIO[Scope, DeployError, RepoInfo] = {
-    // todo: defer syntax
-    for
-      tmpDir <- ZIO.acquireRelease(
+  def cloneAndScan(org: Org, repo: Repo): ZIO[Scope, DeployError, RepoInfo] =
+    defer:
+      val tmpDir = ZIO.acquireRelease(
         ZIO.attemptBlocking(Files.createTempDirectory("skillsjars-")).orDie
-      )(dir => ZIO.attemptBlocking(deleteRecursive(dir.toFile)).ignoreLogged)
+      )(dir => ZIO.attemptBlocking(deleteRecursive(dir.toFile)).ignoreLogged).run
 
-      repoUrl = s"https://github.com/$org/$repo.git"
+      val repoUrl = s"https://github.com/$org/$repo.git"
 
-      git <- ZIO.attemptBlocking:
+      val git = ZIO.attemptBlocking:
         Git.cloneRepository()
           .setURI(repoUrl)
           .setDirectory(tmpDir.toFile)
           .setDepth(1)
           .call()
-      .orElseFail(DeployError.RepoNotFound(org, repo))
+      .orElseFail(DeployError.RepoNotFound(org, repo)).run
 
-      version <- extractVersion(git)
+      val version = extractVersion(git).run
 
-      skillsDir = File(tmpDir.toFile, "skills")
-      _ <- ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(!skillsDir.isDirectory)
+      val skillsDir = File(tmpDir.toFile, "skills")
+      ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(!skillsDir.isDirectory).run
 
-      skillLocations = findSkills(skillsDir, org, repo)
-      _ <- ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(skillLocations.isEmpty)
+      val skillLocations = findSkills(skillsDir, org, repo)
+      ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(skillLocations.isEmpty).run
 
-      maybeLicense = detectLicense(tmpDir.toFile)
-    yield RepoInfo(skillLocations, version, maybeLicense)
-  }
+      val maybeLicense = detectLicense(tmpDir.toFile)
+      RepoInfo(skillLocations, version, maybeLicense)
 
   private def extractVersion(git: Git): IO[DeployError, MavenCentral.Version] =
     ZIO.attemptBlocking:

@@ -3,17 +3,25 @@ import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
 import zio.concurrent.*
 
+case class PublishedArtifact(
+  groupId: MavenCentral.GroupId,
+  artifactId: MavenCentral.ArtifactId,
+  version: MavenCentral.Version,
+  jar: Array[Byte],
+  pom: String,
+)
+
 object MockDeployer:
 
-  def layer: ZLayer[Any, Nothing, Deployer & ConcurrentMap[String, MavenCentral.GroupArtifactVersion]] =
+  def layer: ZLayer[Any, Nothing, Deployer & ConcurrentMap[String, PublishedArtifact]] =
     ZLayer.fromZIO:
-      ConcurrentMap.empty[String, MavenCentral.GroupArtifactVersion].map: published =>
+      ConcurrentMap.empty[String, PublishedArtifact].map: published =>
         val deployer = new Deployer:
           override def publish(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version,
                                jar: Array[Byte], pom: String): IO[DeployError, Unit] =
             val key = s"$groupId:$artifactId:$version"
-            published.put(key, MavenCentral.GroupArtifactVersion(groupId, artifactId, version)).unit
+            published.put(key, PublishedArtifact(groupId, artifactId, version, jar, pom)).unit
         (deployer, published)
     .flatMap: env =>
-      val (deployer, published) = env.get[(Deployer, ConcurrentMap[String, MavenCentral.GroupArtifactVersion])]
+      val (deployer, published) = env.get[(Deployer, ConcurrentMap[String, PublishedArtifact])]
       ZLayer.succeed(deployer) ++ ZLayer.succeed(published)

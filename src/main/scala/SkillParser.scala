@@ -1,5 +1,6 @@
 import Models.*
 import zio.*
+import zio.direct.*
 
 import org.yaml.snakeyaml.Yaml
 import java.util.{Map as JMap}
@@ -18,20 +19,17 @@ object SkillParser:
         else None
       case _ => None
 
-  def parse(path: String, content: String): IO[DeployError, SkillMeta] = {
-    // todo: use defer syntax
-    for
-      yamlStr <- ZIO.fromOption(extractFrontmatter(content))
-        .orElseFail(DeployError.InvalidSkillMd(path, "No YAML frontmatter found"))
-      yaml = Yaml()
-      parsed <- ZIO.attempt(yaml.load[JMap[String, Any]](yamlStr))
-        .mapError(e => DeployError.InvalidSkillMd(path, s"Invalid YAML: ${e.getMessage}"))
-      map <- ZIO.fromOption(Option(parsed).map(_.asScala.toMap))
-        .orElseFail(DeployError.InvalidSkillMd(path, "Empty YAML frontmatter"))
-      name <- ZIO.fromOption(map.get("name").collect { case s: String => s })
-        .orElseFail(DeployError.InvalidSkillMd(path, "Missing required field: name"))
-      description <- ZIO.fromOption(map.get("description").collect { case s: String => s })
-        .orElseFail(DeployError.InvalidSkillMd(path, "Missing required field: description"))
-      maybeLicense = map.get("license").collect { case s: String => s }
-    yield SkillMeta(SkillName(name), description, maybeLicense)
-  }
+  def parse(path: String, content: String): IO[DeployError, SkillMeta] =
+    defer:
+      val yamlStr = ZIO.fromOption(extractFrontmatter(content))
+        .orElseFail(DeployError.InvalidSkillMd(path, "No YAML frontmatter found")).run
+      val parsed = ZIO.attempt(Yaml().load[JMap[String, Any]](yamlStr))
+        .mapError(e => DeployError.InvalidSkillMd(path, s"Invalid YAML: ${e.getMessage}")).run
+      val map = ZIO.fromOption(Option(parsed).map(_.asScala.toMap))
+        .orElseFail(DeployError.InvalidSkillMd(path, "Empty YAML frontmatter")).run
+      val name = ZIO.fromOption(map.get("name").collect { case s: String => s })
+        .orElseFail(DeployError.InvalidSkillMd(path, "Missing required field: name")).run
+      val description = ZIO.fromOption(map.get("description").collect { case s: String => s })
+        .orElseFail(DeployError.InvalidSkillMd(path, "Missing required field: description")).run
+      val maybeLicense = map.get("license").collect { case s: String => s }
+      SkillMeta(SkillName(name), description, maybeLicense)

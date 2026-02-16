@@ -1,17 +1,18 @@
 import Models.SkillsJar
 import com.jamesward.zio_mavencentral.MavenCentral
+import zio.http.URL
 import zio.http.template2.*
 
 // todo: switch to the webjar for tailwind
 object UI:
 
-  def page(pageTitle: String, pageContent: Dom): Dom =
+  def page(pageTitle: String, pageContent: Dom, tailwind: URL): Dom =
     html(
       head(
         title(pageTitle),
         meta(charset := "UTF-8"),
         meta(name := "viewport", Dom.attr("content", "width=device-width, initial-scale=1.0")),
-        script(src := "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"),
+        script(src := tailwind),
       ),
       body(
         `class` := "bg-gray-50 min-h-screen",
@@ -34,13 +35,15 @@ object UI:
       ),
     )
 
-  def index(skillsJars: Seq[SkillsJar], maybeQuery: Option[String]): Dom =
-    page("SkillsJars",
+  def index(skillsJars: Seq[SkillsJar], maybeQuery: Option[String], tailwind: URL): Dom =
+    page(
+      "SkillsJars",
       div(
         searchForm(maybeQuery),
         deployForm,
         skillsJarList(skillsJars),
       ),
+      tailwind
     )
 
   private def searchForm(maybeQuery: Option[String]): Dom =
@@ -147,8 +150,9 @@ object UI:
           option(value := v.toString, v.toString),
       )
 
-  def deployResult(results: Seq[DeployResult]): Dom =
-    page("Deploy Results",
+  def deployResult(results: Seq[DeployResult], tailwind: URL): Dom =
+    page(
+      "Deploy Results",
       div(
         a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
         div(
@@ -156,6 +160,7 @@ object UI:
           results.map(deployResultCard),
         ),
       ),
+      tailwind,
     )
 
   private def deployResultCard(result: DeployResult): Dom =
