@@ -6,7 +6,7 @@ import zio.direct.*
 import zio.http.Client
 
 // why do we need this?
-case class SkillsJarCache(cache: Cache[String, Throwable, Seq[SkillsJar]])
+case class SkillsJarCache(cache: Cache[String, SkillsJarService.ServiceError, Seq[SkillsJar]])
 
 // all of this seems off
 // todo: integration tests
@@ -16,10 +16,13 @@ object SkillsJarService:
 
   private val cacheKey = "all"
 
-  def list: ZIO[SkillsJarCache, Throwable, Seq[SkillsJar]] =
+  enum ServiceError:
+    case FetchFailed(reason: String)
+
+  def list: ZIO[SkillsJarCache, ServiceError, Seq[SkillsJar]] =
     ZIO.serviceWithZIO[SkillsJarCache](_.cache.get(cacheKey))
 
-  def search(query: String): ZIO[SkillsJarCache, Throwable, Seq[SkillsJar]] =
+  def search(query: String): ZIO[SkillsJarCache, ServiceError, Seq[SkillsJar]] =
     defer:
       val all = list.run
       val lower = query.toLowerCase
@@ -31,52 +34,28 @@ object SkillsJarService:
 
   val cacheLayer: ZLayer[Client, Nothing, SkillsJarCache] =
     ZLayer.fromZIO:
-      Cache.makeWith(1, Lookup((_: String) => fetchAllSkillsJars)):
+      Cache.makeWith(1, Lookup((_: String) => fetchAllSkillsJars.mapError(e => e))):
         case Exit.Success(_) => 1.hour
         case Exit.Failure(_) => Duration.Zero
       .map(SkillsJarCache(_))
 
-  private def fetchAllSkillsJars: ZIO[Client, Throwable, Seq[SkillsJar]] =
+  private def fetchAllSkillsJars: ZIO[Client, ServiceError, Seq[SkillsJar]] =
     ZIO.scoped:
       defer:
-        val topLevel = scanDirectory(MavenCentral.GroupId("com.skillsjars")).run
-        val skillsJars = ZIO.foreach(topLevel)(orgId =>
-          ZIO.scoped(scanOrgForSkillsJars(MavenCentral.GroupId(s"com.skillsjars.$orgId")))
-        ).run
-        skillsJars.flatten
-
-  private def scanDirectory(groupId: MavenCentral.GroupId): ZIO[Client & Scope, Throwable, Seq[String]] =
-    MavenCentral.searchArtifacts(groupId)
-      .map(_.value.map(_.toString))
-      .catchAll(_ => ZIO.succeed(Seq.empty))
-
-  private def scanOrgForSkillsJars(orgGroupId: MavenCentral.GroupId): ZIO[Client & Scope, Throwable, Seq[SkillsJar]] =
-    defer:
-      val repos = scanDirectory(orgGroupId).run
-      val results = ZIO.foreach(repos)(repoName =>
-        scanRepoForSkillsJars(MavenCentral.GroupId(s"$orgGroupId.$repoName"))
-      ).run
-      results.flatten
-
-  private def scanRepoForSkillsJars(repoGroupId: MavenCentral.GroupId): ZIO[Client & Scope, Throwable, Seq[SkillsJar]] =
-    defer:
-      val entries = MavenCentral.searchArtifacts(repoGroupId)
-        .map(_.value)
-        .catchAll(_ => ZIO.succeed(Seq.empty)).run
-      val results = ZIO.foreach(entries)(entry => processEntry(repoGroupId, entry)).run
-      results.flatten
-
-  private def processEntry(repoGroupId: MavenCentral.GroupId, entry: MavenCentral.ArtifactId): ZIO[Client & Scope, Throwable, Seq[SkillsJar]] =
-    MavenCentral.isArtifact(repoGroupId, entry)
-      .catchAll(_ => ZIO.succeed(false))
-      .flatMap: isArtifact =>
-        if isArtifact then
-          fetchSkillsJar(repoGroupId, entry).map(Seq(_))
-            .catchAll(_ => ZIO.succeed(Seq.empty))
-        else
-          val subGroupId = MavenCentral.GroupId(s"$repoGroupId.$entry")
-          scanRepoForSkillsJars(subGroupId)
-            .catchAll(_ => ZIO.succeed(Seq.empty))
+        val gid = Models.groupId
+        val entries = MavenCentral.searchArtifacts(gid)
+          .map(_.value)
+          .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.ArtifactId]))
+          .run
+        val results = ZIO.foreach(entries): entry =>
+          ZIO.scoped:
+            MavenCentral.isArtifact(gid, entry)
+              .catchAll(_ => ZIO.succeed(false))
+              .flatMap:
+                case true => fetchSkillsJar(gid, entry).map(Some(_)).catchAll(_ => ZIO.none)
+                case false => ZIO.none
+        .run
+        results.flatten
 
   private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): ZIO[Client & Scope, Throwable, SkillsJar] =
     defer:

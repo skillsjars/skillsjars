@@ -4,11 +4,15 @@ import zio.*
 import zio.direct.*
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.revwalk.RevWalk
+import org.yaml.snakeyaml.Yaml
 
 import java.io.File
+import java.net.URI
+import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.nio.file.{Files, Path}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneOffset}
+import java.util.{Map as JMap}
 import scala.jdk.CollectionConverters.*
 
 object GitService:
@@ -16,7 +20,7 @@ object GitService:
   case class RepoInfo(
     skills: List[(SkillLocation, File)],
     version: MavenCentral.Version,
-    maybeLicense: Option[String],
+    licenses: List[License],
   )
 
   // any reason to keep the dir around longer?
@@ -44,8 +48,11 @@ object GitService:
       val skillLocations = findSkills(skillsDir, org, repo)
       ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(skillLocations.isEmpty).run
 
-      val maybeLicense = detectLicense(tmpDir.toFile)
-      RepoInfo(skillLocations, version, maybeLicense)
+      val licenses =
+        val ghLicenses = fetchGitHubLicense(org, repo)
+        if ghLicenses.nonEmpty then ghLicenses
+        else detectLicenses(tmpDir.toFile)
+      RepoInfo(skillLocations, version, licenses)
 
   private def extractVersion(git: Git): IO[DeployError, MavenCentral.Version] =
     ZIO.attemptBlocking:
@@ -78,28 +85,55 @@ object GitService:
     val subDirs = Option(skillsDir.listFiles()).getOrElse(Array.empty[File]).filter(_.isDirectory).toList
     subDirs.flatMap(dir => scan(dir, List(dir.getName)))
 
-  private def detectLicense(repoDir: File): Option[String] =
-    val licenseNames = List("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "LICENCE.txt")
-    licenseNames.flatMap: name =>
-      val file = File(repoDir, name)
+  private val licenseFileNames = List("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "LICENCE.txt")
+
+  def detectLicenses(dir: File): List[License] =
+    licenseFileNames.flatMap: name =>
+      val file = File(dir, name)
       if file.isFile then
         val content = String(Files.readAllBytes(file.toPath))
-        Some(detectLicenseType(content))
+        detectLicenseType(content).flatMap(Models.licenseFromSpdxId)
       else
         None
-    .headOption
+    .distinct
 
-  private def detectLicenseType(content: String): String =
+  def findLicenseFile(dir: File): Option[String] =
+    licenseFileNames.find(name => File(dir, name).isFile)
+
+  def fetchGitHubLicense(org: Org, repo: Repo): List[License] =
+    try
+      val client = HttpClient.newHttpClient()
+      val request = HttpRequest.newBuilder()
+        .uri(URI.create(s"https://api.github.com/repos/$org/$repo/license"))
+        .header("Accept", "application/vnd.github.v3+json")
+        .GET()
+        .build()
+      val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+      if response.statusCode() == 200 then
+        val yaml = Yaml()
+        val parsed = yaml.load[JMap[String, Any]](response.body())
+        Option(parsed)
+          .flatMap(m => Option(m.get("license")))
+          .collect { case m: JMap[?, ?] => m }
+          .flatMap(m => Option(m.get("spdx_id")))
+          .collect { case s: String if s != "NOASSERTION" => s }
+          .flatMap(Models.licenseFromSpdxId)
+          .toList
+      else Nil
+    catch
+      case _: Exception => Nil
+
+  private def detectLicenseType(content: String): Option[String] =
     val lower = content.toLowerCase
-    if lower.contains("apache license") && lower.contains("version 2.0") then "Apache-2.0"
-    else if lower.contains("mit license") || lower.contains("permission is hereby granted, free of charge") then "MIT"
-    else if lower.contains("gnu general public license") && lower.contains("version 3") then "GPL-3.0"
-    else if lower.contains("gnu general public license") && lower.contains("version 2") then "GPL-2.0"
-    else if lower.contains("bsd 3-clause") || lower.contains("redistribution and use in source and binary forms") then "BSD-3-Clause"
-    else if lower.contains("bsd 2-clause") then "BSD-2-Clause"
-    else if lower.contains("mozilla public license") then "MPL-2.0"
-    else if lower.contains("isc license") then "ISC"
-    else "Unknown"
+    if lower.contains("apache license") && lower.contains("version 2.0") then Some("Apache-2.0")
+    else if lower.contains("mit license") || lower.contains("permission is hereby granted, free of charge") then Some("MIT")
+    else if lower.contains("gnu general public license") && lower.contains("version 3") then Some("GPL-3.0")
+    else if lower.contains("gnu general public license") && lower.contains("version 2") then Some("GPL-2.0")
+    else if lower.contains("bsd 3-clause") || lower.contains("redistribution and use in source and binary forms") then Some("BSD-3-Clause")
+    else if lower.contains("bsd 2-clause") then Some("BSD-2-Clause")
+    else if lower.contains("mozilla public license") then Some("MPL-2.0")
+    else if lower.contains("isc license") then Some("ISC")
+    else None
 
   private def deleteRecursive(file: File): Unit =
     if file.isDirectory then

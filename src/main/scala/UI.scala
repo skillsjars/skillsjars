@@ -1,9 +1,8 @@
-import Models.SkillsJar
+import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
 import zio.http.URL
 import zio.http.template2.*
 
-// todo: switch to the webjar for tailwind
 object UI:
 
   def page(pageTitle: String, pageContent: Dom, tailwind: URL): Dom =
@@ -29,21 +28,32 @@ object UI:
           pageContent,
           footer(
             `class` := "mt-12 pt-6 border-t border-gray-200 text-gray-500 text-sm",
-            a(href := "https://github.com/jamesward/skillsjars", "github.com/jamesward/skillsjars"),
+            a(href := "https://github.com/skillsjars/skillsjars", "github.com/skillsjars/skillsjars"),
           ),
         ),
       ),
     )
 
-  def index(skillsJars: Seq[SkillsJar], maybeQuery: Option[String], tailwind: URL): Dom =
+  def index(skillsJars: Seq[SkillsJar], maybeQuery: Option[String], tailwind: URL, maybeError: Option[SkillsJarService.ServiceError] = None): Dom =
     page(
       "SkillsJars",
       div(
+        maybeError.map(errorCard).getOrElse(Dom.empty),
         searchForm(maybeQuery),
         deployForm,
         skillsJarList(skillsJars),
       ),
       tailwind
+    )
+
+  private def errorCard(error: SkillsJarService.ServiceError): Dom =
+    val message = error match
+      case SkillsJarService.ServiceError.FetchFailed(reason) => s"Failed to fetch SkillsJars: $reason"
+
+    div(
+      `class` := "mb-6 bg-red-50 border border-red-200 rounded-lg p-4",
+      p(`class` := "font-semibold text-red-800", "Error"),
+      p(`class` := "text-sm text-red-700 mt-1", message),
     )
 
   private def searchForm(maybeQuery: Option[String]): Dom =
@@ -171,7 +181,25 @@ object UI:
           p(`class` := "font-semibold text-green-800", "Deployed successfully"),
           p(`class` := "text-sm font-mono text-green-700 mt-1", s"$groupId:$artifactId:$version"),
         )
-      case DeployResult.Failure(message) =>
+      case DeployResult.Skipped(skillName, reason) =>
+        div(
+          `class` := "bg-amber-50 border border-amber-200 rounded-lg p-4",
+          p(`class` := "font-semibold text-amber-800", s"Skipped: $skillName"),
+          p(`class` := "text-sm text-amber-700 mt-1", reason),
+        )
+      case DeployResult.Failure(error) =>
+        val message = error match
+          case DeployError.RepoNotFound(org, repo) => s"Repository not found: $org/$repo"
+          case DeployError.NoSkillsDirectory(org, repo) => s"No skills directory in $org/$repo"
+          case DeployError.InvalidSkillMd(path, reason) => s"Invalid SKILL.md at $path: $reason"
+          case DeployError.InvalidComponent(component, reason) => s"Invalid component '$component': $reason"
+          case DeployError.DuplicateVersion(gid, aid, v) => s"Duplicate version: $gid:$aid:$v"
+          case DeployError.NoLicense(org, repo, skillName) => s"No license found for skill '$skillName' in $org/$repo. Add a LICENSE file or specify license in SKILL.md frontmatter."
+          case DeployError.NoPublishableSkills(org, repo, skipped) =>
+            val reasons = skipped.map(s => s"${s.skillName}: ${s.reason}").mkString("; ")
+            s"No skills could be published from $org/$repo. $reasons"
+          case DeployError.PublishFailed(reason) => s"Publish failed: $reason"
+
         div(
           `class` := "bg-red-50 border border-red-200 rounded-lg p-4",
           p(`class` := "font-semibold text-red-800", "Deploy failed"),
@@ -180,4 +208,5 @@ object UI:
 
 enum DeployResult:
   case Success(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version)
-  case Failure(message: String)
+  case Skipped(skillName: SkillName, reason: String)
+  case Failure(error: DeployError)

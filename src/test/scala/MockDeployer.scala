@@ -1,27 +1,33 @@
 import Models.*
-import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
-import zio.concurrent.*
 
-case class PublishedArtifact(
-  groupId: MavenCentral.GroupId,
-  artifactId: MavenCentral.ArtifactId,
-  version: MavenCentral.Version,
-  jar: Array[Byte],
-  pom: String,
-)
+import java.nio.file.Files
+
+
+class MockDeployer extends Deployer[Any]:
+
+  var upload: Option[(String, Chunk[Byte])] = None
+
+  override def upload(filename: String, bytes: Chunk[Byte]): ZIO[Any, DeployError, Unit] =
+    upload = Some(filename -> bytes)
+    ZIO.attempt:
+      val tmpFile = Files.createTempFile("upload-", s"-$filename")
+      Files.write(tmpFile, bytes.toArray)
+    .mapError(e => DeployError.PublishFailed(s"Failed to write tmp file: ${e.getMessage}"))
+    .debug
+    .unit
+
+  override def ascSign(toSign: Chunk[Byte]): IO[DeployError, Option[Chunk[Byte]]] =
+    ZIO.systemWith(_.env("OSS_GPG_KEY")).flatMap:
+      case Some(gpgKey) =>
+        ZIO.systemWith(_.env("OSS_GPG_PASS")).flatMap: maybeGpgPass =>
+          Deployer.ascSignWith(gpgKey, maybeGpgPass)(toSign).asSome
+      case None =>
+        ZIO.none
+    .catchAll:
+      case e: DeployError => ZIO.fail(e)
+      case e: Throwable => ZIO.fail(DeployError.PublishFailed(e.getMessage))
 
 object MockDeployer:
+  val layer = ZLayer.succeed(MockDeployer())
 
-  def layer: ZLayer[Any, Nothing, Deployer & ConcurrentMap[String, PublishedArtifact]] =
-    ZLayer.fromZIO:
-      ConcurrentMap.empty[String, PublishedArtifact].map: published =>
-        val deployer = new Deployer:
-          override def publish(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version,
-                               jar: Array[Byte], pom: String): IO[DeployError, Unit] =
-            val key = s"$groupId:$artifactId:$version"
-            published.put(key, PublishedArtifact(groupId, artifactId, version, jar, pom)).unit
-        (deployer, published)
-    .flatMap: env =>
-      val (deployer, published) = env.get[(Deployer, ConcurrentMap[String, PublishedArtifact])]
-      ZLayer.succeed(deployer) ++ ZLayer.succeed(published)

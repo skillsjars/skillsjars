@@ -21,7 +21,7 @@ object SkillParserSpec extends ZIOSpecDefault:
         assertTrue(
           meta.name == SkillName("my-skill"),
           meta.description == "A useful skill",
-          meta.maybeLicense.contains("MIT"),
+          meta.licenses == List(License("MIT License", "https://opensource.org/licenses/MIT")),
         )
     ,
     test("parses valid SKILL.md without license"):
@@ -37,7 +37,7 @@ object SkillParserSpec extends ZIOSpecDefault:
         assertTrue(
           meta.name == SkillName("another-skill"),
           meta.description == "Another skill",
-          meta.maybeLicense.isEmpty,
+          meta.licenses.isEmpty,
         )
     ,
     test("fails when no frontmatter"):
@@ -77,6 +77,36 @@ object SkillParserSpec extends ZIOSpecDefault:
               case _ => false
           case _ => false
         )
+    ,
+    test("parses list-valued license"):
+      defer:
+        val content =
+          """---
+            |name: multi-license-skill
+            |description: A skill with multiple licenses
+            |license: [MIT, Apache-2.0]
+            |---
+            |# Content
+            |""".stripMargin
+        val meta = SkillParser.parse("SKILL.md", content).run
+        assertTrue(
+          meta.licenses == List(
+            License("MIT License", "https://opensource.org/licenses/MIT"),
+            License("Apache License 2.0", "https://www.apache.org/licenses/LICENSE-2.0"),
+          ),
+        )
+    ,
+    test("ignores unknown SPDX license"):
+      defer:
+        val content =
+          """---
+            |name: bad-license-skill
+            |description: A skill
+            |license: UNKNOWN-LICENSE
+            |---
+            |""".stripMargin
+        val meta = SkillParser.parse("SKILL.md", content).run
+        assertTrue(meta.licenses.isEmpty)
     ,
     test("fails with invalid YAML"):
       defer:

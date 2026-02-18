@@ -1,5 +1,6 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
+import zio.*
 
 object PomGenerator:
 
@@ -10,22 +11,22 @@ object PomGenerator:
     version: MavenCentral.Version,
     name: SkillName,
     description: String,
-    maybeLicense: Option[String],
+    licenses: NonEmptyChunk[License],
     org: Org,
     repo: Repo,
-  ): String =
-    val licenseXml = maybeLicense.fold(""):
-      license =>
-        s"""  <licenses>
-           |    <license>
-           |      <name>$license</name>
+  ): Chunk[Byte] =
+    val licenseXml =
+      val entries = licenses.map: license =>
+        s"""    <license>
+           |      <name>${license.name}</name>
+           |      <url>${license.url}</url>
            |      <distribution>repo</distribution>
-           |    </license>
-           |  </licenses>""".stripMargin
+           |    </license>""".stripMargin
+      s"  <licenses>\n${entries.mkString("\n")}\n  </licenses>"
 
     val scmUrl = s"https://github.com/$org/$repo"
 
-    s"""<?xml version="1.0" encoding="UTF-8"?>
+    val pom = s"""<?xml version="1.0" encoding="UTF-8"?>
        |<project xmlns="http://maven.apache.org/POM/4.0.0"
        |         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        |         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -51,3 +52,5 @@ object PomGenerator:
        |  </developers>
        |</project>
        |""".stripMargin
+
+    Chunk.fromArray(pom.getBytes)

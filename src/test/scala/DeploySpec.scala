@@ -10,159 +10,180 @@ import zio.stream.*
 
 object DeploySpec extends ZIOSpecDefault:
 
-  private def readJarEntries(jar: Array[Byte]): ZIO[Any, Throwable, Set[String]] =
-    ZStream.fromChunk(Chunk.fromArray(jar))
+  private def readJarEntries(jar: Chunk[Byte]): ZIO[Any, Throwable, Map[String, Chunk[Byte]]] =
+    ZStream.fromChunk(jar)
       .via(ZipUnarchiver.unarchive)
-      .map(_._1.name)
+      .mapZIO: (entry, stream) =>
+        stream.runCollect.map: bytes =>
+          entry.name -> bytes
       .runCollect
-      .map(_.toSet)
+      .map(_.toMap)
 
   def spec = suite("DeploySpec")(
     suite("PomGenerator")(
       test("includes required fields"):
         val pom = PomGenerator.generate(
-          MavenCentral.GroupId("com.skillsjars.myorg.myrepo"),
-          MavenCentral.ArtifactId("my-skill"),
+          MavenCentral.GroupId("com.skillsjars"),
+          MavenCentral.ArtifactId("myorg__myrepo__my-skill"),
           MavenCentral.Version("2026_02_13-abc1234"),
           SkillName("My Skill"),
           "A great skill",
-          Some("MIT"),
+          NonEmptyChunk(License("MIT License", "https://opensource.org/licenses/MIT")),
           Org("myorg"),
           Repo("myrepo"),
-        )
+        ).asString
+
         assertTrue(
-          pom.contains("<groupId>com.skillsjars.myorg.myrepo</groupId>"),
-          pom.contains("<artifactId>my-skill</artifactId>"),
+          pom.contains("<groupId>com.skillsjars</groupId>"),
+          pom.contains("<artifactId>myorg__myrepo__my-skill</artifactId>"),
           pom.contains("<version>2026_02_13-abc1234</version>"),
           pom.contains("<name>My Skill</name>"),
           pom.contains("<description>A great skill</description>"),
-          pom.contains("<name>MIT</name>"),
+          pom.contains("<name>MIT License</name>"),
+          pom.contains("<url>https://opensource.org/licenses/MIT</url>"),
           pom.contains("https://github.com/myorg/myrepo"),
         )
-      ,
-      test("works without license"):
-        val pom = PomGenerator.generate(
-          MavenCentral.GroupId("com.skillsjars.org.repo"),
-          MavenCentral.ArtifactId("skill"),
-          MavenCentral.Version("2026_01_01-1234567"),
-          SkillName("skill"),
-          "desc",
-          None,
-          Org("org"),
-          Repo("repo"),
-        )
-        assertTrue(
-          pom.contains("<groupId>com.skillsjars.org.repo</groupId>"),
-          !pom.contains("<license>"),
-        )
-      ,
-    ),
-    suite("groupIdFor")(
-      test("with no subpath"):
-        val gid = groupIdFor(Org("myorg"), Repo("myrepo"))
-        assertTrue(gid.toString == "com.skillsjars.myorg.myrepo")
-      ,
-      test("with subpath"):
-        val gid = groupIdFor(Org("myorg"), Repo("myrepo"), List("sub", "path"))
-        assertTrue(gid.toString == "com.skillsjars.myorg.myrepo.sub.path")
-      ,
     ),
     suite("deploy integration")(
       test("nonexistent repo returns RepoNotFound"):
         defer:
-          val result = ZIO.scoped(Deployer.deployRepo(Org("nonexistent-org-abc123"), Repo("nonexistent-repo"))).exit.run
+          val deployer = ZIO.service[Deployer[Any]].run
+          val result = ZIO.scoped(deployer.deploy(Org("nonexistent-org-abc123"), Repo("nonexistent-repo"))).exit.run
           assertTrue(result match
-            case Exit.Failure(cause) => cause.failureOption.exists(_.isInstanceOf[DeployError.RepoNotFound])
+            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.RepoNotFound])
             case _ => false
           )
       .provide(MockDeployer.layer)
       ,
       test("publishes one artifact per skill"):
+        // brittle - should be able to specify a commit id for consistency
         ZIO.scoped:
           defer:
-            val repoInfo = Deployer.deployRepo(Org("anthropics"), Repo("skills")).run
-            val published = ZIO.service[ConcurrentMap[String, PublishedArtifact]].run
-            val allPublished = published.toList.run
-            val expectedSkillNames = repoInfo.skills.map(_._1.skillName)
-            val publishedArtifactIds = allPublished.map(_._2.artifactId)
+            val deployer = ZIO.service[Deployer[Any]].run
+            val outcome = deployer.deploy(Org("anthropics"), Repo("skills")).run
+
+            val mockDeployer = deployer.asInstanceOf[MockDeployer]
+            val files = readJarEntries(mockDeployer.upload.get._2).run
+
+            val canvasGav = outcome.published.find(_.artifactId.toString.contains("canvas-design")).get
+            val skillsJar = readJarEntries(files.find(_._1.endsWith(".jar")).get._2).run
+
             assertTrue(
-              allPublished.size == repoInfo.skills.size,
-              expectedSkillNames.forall(name => publishedArtifactIds.contains(MavenCentral.ArtifactId(name.toString))),
+              outcome.published.nonEmpty,
+              outcome.published.forall(_.groupId.toString == "com.skillsjars"),
+              outcome.skipped.exists(_.skillName == SkillName("doc-coauthoring")),
+              files.size == outcome.published.size * 6, // pom, jar, pom.md5, jar.md5, pom.sha1, jar.sha1
+              files.keys.count(_.startsWith(s"com/skillsjars/${canvasGav.artifactId}/")) == 6,
+              files.contains(s"com/skillsjars/${canvasGav.artifactId}/${canvasGav.version}/${canvasGav.artifactId}-${canvasGav.version}.jar"),
+              skillsJar.keys.exists(_.endsWith("SKILL.md")),
+              skillsJar.keys.exists(_.startsWith("META-INF/resources/skills/anthropics/skills")),
             )
       .provide(MockDeployer.layer)
       ,
-      test("all published artifacts share the same version"):
+      test("publish with signing"):
         ZIO.scoped:
           defer:
-            val repoInfo = Deployer.deployRepo(Org("anthropics"), Repo("skills")).run
-            val published = ZIO.service[ConcurrentMap[String, PublishedArtifact]].run
-            val allPublished = published.toList.run
-            val versions = allPublished.map(_._2.version).distinct
+            val deployer = ZIO.service[Deployer[Any]].run
+            val outcome = deployer.deploy(Org("anthropics"), Repo("skills")).run
+
+            val mockDeployer = deployer.asInstanceOf[MockDeployer]
+
+            val files = readJarEntries(mockDeployer.upload.get._2).run.keys
+
             assertTrue(
-              versions.size == 1,
-              versions.head == repoInfo.version,
+              outcome.published.nonEmpty,
+              files.exists(_.endsWith(".asc"))
+            )
+      .provide(MockDeployer.layer) @@ TestAspect.withLiveSystem @@ TestAspect.ifEnvSet("OSS_GPG_KEY")
+      ,
+      test("repo-level license is used when skill has none"):
+        ZIO.scoped:
+          defer:
+            val deployer = ZIO.service[Deployer[Any]].run
+            val outcome = deployer.deploy(Org("brunoborges"), Repo("jdb-agentic-debugger")).run
+
+            val mockDeployer = deployer.asInstanceOf[MockDeployer]
+            val files = readJarEntries(mockDeployer.upload.get._2).run
+
+            val gav = outcome.published.find(_.artifactId.toString.contains("jdb-debugger")).get
+            val pomBytes = files(s"com/skillsjars/${gav.artifactId}/${gav.version}/${gav.artifactId}-${gav.version}.pom")
+            val pom = ZIO.succeed(pomBytes.asString).run
+
+            assertTrue(
+              outcome.published.size == 1,
+              outcome.skipped.isEmpty,
+              pom.contains("<name>MIT License</name>"),
+              pom.contains("<url>https://opensource.org/licenses/MIT</url>"),
             )
       .provide(MockDeployer.layer)
+    ),
+    suite("artifactIdFor")(
+      test("basic artifact id"):
+        defer:
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("my-skill")).run
+          assertTrue(aid.toString == "myorg__myrepo__my-skill")
       ,
-      test("each published JAR contains SKILL.md and maven metadata"):
-        ZIO.scoped:
-          defer:
-            Deployer.deployRepo(Org("anthropics"), Repo("skills")).run
-            val published = ZIO.service[ConcurrentMap[String, PublishedArtifact]].run
-            val allPublished = published.toList.run
-            val results = ZIO.foreach(allPublished): (_, artifact) =>
-              readJarEntries(artifact.jar).map: entries =>
-                val mavenPrefix = s"META-INF/maven/${artifact.groupId}/${artifact.artifactId}/"
-                (
-                  entries.exists(_.endsWith("SKILL.md")),
-                  entries.contains(s"${mavenPrefix}pom.xml"),
-                  entries.contains(s"${mavenPrefix}pom.properties"),
-                )
-            .run
-            assertTrue(
-              results.forall(_._1),
-              results.forall(_._2),
-              results.forall(_._3),
-            )
-      .provide(MockDeployer.layer)
+      test("with subpath"):
+        defer:
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("myskill"), List("sub", "path")).run
+          assertTrue(aid.toString == "myorg__myrepo__sub__path__myskill")
       ,
-      test("published pom contains correct groupId and scm url"):
-        ZIO.scoped:
-          defer:
-            Deployer.deployRepo(Org("browser-use"), Repo("browser-use")).run
-            val published = ZIO.service[ConcurrentMap[String, PublishedArtifact]].run
-            val allPublished = published.toList.run
-            val results = allPublished.map: (_, artifact) =>
-              (
-                artifact.pom.contains(s"<groupId>${artifact.groupId}</groupId>"),
-                artifact.pom.contains(s"<artifactId>${artifact.artifactId}</artifactId>"),
-                artifact.pom.contains("https://github.com/browser-use/browser-use"),
-              )
-            assertTrue(
-              allPublished.nonEmpty,
-              results.forall(_._1),
-              results.forall(_._2),
-              results.forall(_._3),
-            )
-      .provide(MockDeployer.layer)
+      test("uppercase is lowercased"):
+        defer:
+          val aid = artifactIdFor(Org("MyOrg"), Repo("MyRepo"), SkillName("My-Skill")).run
+          assertTrue(aid.toString == "myorg__myrepo__my-skill")
       ,
-      test("nested skill has subpath in groupId and resource path"):
-        ZIO.scoped:
-          defer:
-            Deployer.deployRepo(Org("vercel-labs"), Repo("agent-skills")).run
-            val published = ZIO.service[ConcurrentMap[String, PublishedArtifact]].run
-            val allPublished = published.toList.run
-            val deploySkill = allPublished.find(_._2.artifactId == MavenCentral.ArtifactId("vercel-deploy-claimable"))
-            assertTrue(deploySkill.isDefined) &&
-            {
-              val artifact = deploySkill.get._2
-              val entries = readJarEntries(artifact.jar).run
-              assertTrue(
-                artifact.groupId == MavenCentral.GroupId("com.skillsjars.vercel-labs.agent-skills.claude.ai"),
-                entries.exists(e => e.contains("claude.ai/vercel-deploy-claimable/SKILL.md")),
-              )
-            }
-      .provide(MockDeployer.layer)
+      test("special characters are dropped"):
+        defer:
+          val aid = artifactIdFor(Org("my.org"), Repo("my.repo"), SkillName("my_skill!@#name")).run
+          assertTrue(aid.toString == "myorg__myrepo__my_skillname")
       ,
-    ) @@ TestAspect.withLiveClock @@ TestAspect.timeout(120.seconds),
+      test("leading and trailing hyphens/underscores are stripped"):
+        defer:
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("-my-skill-")).run
+          assertTrue(aid.toString == "myorg__myrepo__my-skill")
+      ,
+      test("subpath components are also sanitized"):
+        defer:
+          val aid = artifactIdFor(Org("org"), Repo("repo"), SkillName("skill"), List("Sub.Path", "LEVEL_2")).run
+          assertTrue(aid.toString == "org__repo__subpath__level_2__skill")
+      ,
+      test("already clean names pass through unchanged"):
+        defer:
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("my-skill")).run
+          assertTrue(aid.toString == "myorg__myrepo__my-skill")
+      ,
+      test("fails when org contains __"):
+        defer:
+          val result = artifactIdFor(Org("my__org"), Repo("myrepo"), SkillName("myskill")).exit.run
+          assertTrue(result match
+            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case _ => false
+          )
+      ,
+      test("fails when repo contains __"):
+        defer:
+          val result = artifactIdFor(Org("myorg"), Repo("my__repo"), SkillName("myskill")).exit.run
+          assertTrue(result match
+            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case _ => false
+          )
+      ,
+      test("fails when skill name contains __"):
+        defer:
+          val result = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("my__skill")).exit.run
+          assertTrue(result match
+            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case _ => false
+          )
+      ,
+      test("fails when subpath contains __"):
+        defer:
+          val result = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("myskill"), List("sub__path")).exit.run
+          assertTrue(result match
+            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case _ => false
+          )
+      ,
+    ),
   )
