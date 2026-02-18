@@ -42,9 +42,15 @@ object App extends ZIOAppDefault:
       ,
     ) ++ webJars.routes
 
+  private val serverLayer =
+    ZLayer.fromZIO:
+      ZIO.systemWith(_.env("PORT")).map: maybePort =>
+        maybePort.flatMap(_.toIntOption).fold(Server.default)(Server.defaultWithPort)
+    .flatten
+
   def run =
     Server.serve(appRoutes[MavenCentral.Deploy.Sonatype](WebJarsLive())).provide(
-      Server.default,
+      serverLayer,
       Client.default,
       MavenCentral.Deploy.Sonatype.Live,
       Deployer.live,
