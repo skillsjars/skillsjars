@@ -54,11 +54,23 @@ object Models:
     case NoPublishableSkills(org: Org, repo: Repo, skipped: List[SkippedSkill])
     case PublishFailed(reason: String)
 
+  enum BuildTool(val label: String, val param: String):
+    case Maven extends BuildTool("Maven", "maven")
+    case Gradle extends BuildTool("Gradle", "gradle")
+    case Sbt extends BuildTool("sbt", "sbt")
+
+  object BuildTool:
+    def fromParam(s: String): BuildTool = s.toLowerCase match
+      case "gradle" => BuildTool.Gradle
+      case "sbt" => BuildTool.Sbt
+      case _ => BuildTool.Maven
+
   given CanEqual[Org, Org] = CanEqual.derived
   given CanEqual[Repo, Repo] = CanEqual.derived
   given CanEqual[SkillName, SkillName] = CanEqual.derived
   given CanEqual[License, License] = CanEqual.derived
   given CanEqual[DeployError, DeployError] = CanEqual.derived
+  given CanEqual[BuildTool, BuildTool] = CanEqual.derived
 
   private def sanitize(s: String): String =
     s.toLowerCase.replaceAll("[^a-z0-9_-]", "").replaceAll("^[-_]+|[-_]+$", "")

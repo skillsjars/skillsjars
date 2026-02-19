@@ -3,6 +3,8 @@ import com.jamesward.zio_mavencentral.MavenCentral
 import zio.http.URL
 import zio.http.template2.*
 
+import java.net.URLEncoder
+
 object UI:
 
   def page(pageTitle: String, pageContent: Dom, tailwind: URL): Dom =
@@ -12,6 +14,9 @@ object UI:
         meta(charset := "UTF-8"),
         meta(name := "viewport", Dom.attr("content", "width=device-width, initial-scale=1.0")),
         script(src := tailwind),
+        link(rel := "icon", href := "/favicon.ico", size := "any"),
+        link(rel := "icon", href := "/favicon.png", `type` := "image/png"),
+        link(rel := "apple-touch-icon", href := "/favicon.png", `type` := "image/png"),
       ),
       body(
         `class` := "bg-gray-50 min-h-screen",
@@ -34,14 +39,16 @@ object UI:
       ),
     )
 
-  def index(skillsJars: Seq[SkillsJar], maybeQuery: Option[String], tailwind: URL, maybeError: Option[SkillsJarService.ServiceError] = None): Dom =
+  def index(skillsJars: Seq[SkillsJar], maybeQuery: Option[String], buildTool: BuildTool, tailwind: URL, maybeError: Option[SkillsJarService.ServiceError] = None): Dom =
     page(
       "SkillsJars",
       div(
         maybeError.map(errorCard).getOrElse(Dom.empty),
-        searchForm(maybeQuery),
+        searchForm(maybeQuery, buildTool),
         deployForm,
-        skillsJarList(skillsJars),
+        buildToolSelector(buildTool, maybeQuery),
+        skillsJarList(skillsJars, buildTool),
+        snippetScript(buildTool),
       ),
       tailwind
     )
@@ -56,11 +63,12 @@ object UI:
       p(`class` := "text-sm text-red-700 mt-1", message),
     )
 
-  private def searchForm(maybeQuery: Option[String]): Dom =
+  private def searchForm(maybeQuery: Option[String], buildTool: BuildTool): Dom =
     form(
       `class` := "mb-6",
       action := "/",
       method := "get",
+      input(`type` := "hidden", name := "bt", value := buildTool.param),
       div(
         `class` := "flex gap-2",
         input(
@@ -77,7 +85,7 @@ object UI:
         ),
         maybeQuery.fold(Dom.empty): _ =>
           a(
-            href := "/",
+            href := s"/?bt=${buildTool.param}",
             `class` := "px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 cursor-pointer flex items-center",
             "Clear",
           ),
@@ -127,16 +135,36 @@ object UI:
       ),
     )
 
-  private def skillsJarList(skillsJars: Seq[SkillsJar]): Dom =
+  private def buildToolSelector(buildTool: BuildTool, maybeQuery: Option[String]): Dom =
+    val bts = BuildTool.values.toSeq
+    div(
+      `class` := "mb-4 inline-flex rounded-lg overflow-hidden border border-gray-300",
+      bts.zipWithIndex.map: (bt, idx) =>
+        val queryPart = maybeQuery.fold("")(q => s"&q=${URLEncoder.encode(q, "UTF-8")}")
+        val borderCls = if idx < bts.size - 1 then " border-r border-gray-300" else ""
+        a(
+          href := s"/?bt=${bt.param}$queryPart",
+          `class` := (
+            if bt == buildTool then s"px-4 py-2 bg-blue-600 text-white font-medium$borderCls"
+            else s"px-4 py-2 bg-white text-gray-700 hover:bg-gray-50 cursor-pointer$borderCls"
+          ),
+          bt.label,
+        ),
+    )
+
+  private def skillsJarList(skillsJars: Seq[SkillsJar], buildTool: BuildTool): Dom =
     if skillsJars.isEmpty then
       p(`class` := "text-gray-500 text-center py-8", "No SkillsJars found.")
     else
       div(
         `class` := "space-y-3",
-        skillsJars.map(skillsJarCard),
+        skillsJars.map(sj => skillsJarCard(sj, buildTool)),
       )
 
-  private def skillsJarCard(sj: SkillsJar): Dom =
+  private def skillsJarCard(sj: SkillsJar, buildTool: BuildTool): Dom =
+    val gid = s"${sj.groupId}"
+    val aid = s"${sj.artifactId}"
+    val latestVersion = sj.versions.headOption.map(_.toString).getOrElse("")
     div(
       `class` := "bg-white rounded-lg shadow p-4",
       div(
@@ -144,16 +172,28 @@ object UI:
         div(
           h3(`class` := "font-semibold text-gray-900", sj.name),
           p(`class` := "text-sm text-gray-600 mt-1", sj.description),
-          p(
-            `class` := "text-xs text-gray-400 mt-2 font-mono",
-            s"${sj.groupId}:${sj.artifactId}",
-          ),
         ),
         div(
           `class` := "ml-4",
           versionSelect(sj),
         ),
       ),
+      if sj.versions.nonEmpty then
+        div(
+          `class` := "mt-3 relative",
+          pre(
+            id := s"snippet-$aid",
+            `class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto pr-16",
+            snippetText(gid, aid, latestVersion, buildTool),
+          ),
+          button(
+            `type` := "button",
+            Dom.attr("onclick", s"copySnippet(this,'$aid')"),
+            `class` := "absolute top-2 right-2 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50 cursor-pointer",
+            "Copy",
+          ),
+        )
+      else Dom.empty,
     )
 
   private def versionSelect(sj: SkillsJar): Dom =
@@ -162,9 +202,45 @@ object UI:
     else
       select(
         `class` := "px-2 py-1 border border-gray-300 rounded text-sm",
+        Dom.attr("onchange", s"updateSnippet(this,'${sj.groupId}','${sj.artifactId}')"),
         sj.versions.map: v =>
           option(value := v.toString, v.toString),
       )
+
+  private def snippetText(groupId: String, artifactId: String, version: String, buildTool: BuildTool): String =
+    buildTool match
+      case BuildTool.Maven =>
+        s"<dependency>\n    <groupId>$groupId</groupId>\n    <artifactId>$artifactId</artifactId>\n    <version>$version</version>\n</dependency>"
+      case BuildTool.Gradle =>
+        s"runtimeOnly(\"$groupId:$artifactId:$version\")"
+      case BuildTool.Sbt =>
+        s""""$groupId" % "$artifactId" % "$version""""
+
+  private def snippetScript(buildTool: BuildTool): Dom =
+    script.inlineJs(s"""
+      var buildTool = '${buildTool.param}';
+      function updateSnippet(sel, gid, aid) {
+        var v = sel.value;
+        var el = document.getElementById('snippet-' + aid);
+        if (!el) return;
+        if (buildTool === 'maven') {
+          el.textContent = '<dependency>\\n    <groupId>' + gid + '</groupId>\\n    <artifactId>' + aid + '</artifactId>\\n    <version>' + v + '</version>\\n</dependency>';
+        } else if (buildTool === 'gradle') {
+          el.textContent = "runtimeOnly(\\\"" + gid + ':' + aid + ':' + v + "\\\")";
+        } else {
+          el.textContent = '"' + gid + '" % "' + aid + '" % "' + v + '"';
+        }
+      }
+      function copySnippet(btn, aid) {
+        var el = document.getElementById('snippet-' + aid);
+        if (!el) return;
+        navigator.clipboard.writeText(el.textContent).then(function() {
+          var orig = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(function() { btn.textContent = orig; }, 2000);
+        });
+      }
+    """)
 
   def deployResult(results: Seq[DeployResult], tailwind: URL): Dom =
     page(

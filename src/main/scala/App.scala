@@ -6,11 +6,11 @@ import zio.http.*
 
 object App extends ZIOAppDefault:
 
-  private def indexHandler(request: Request, tailwind: URL): ZIO[SkillsJarCache, SkillsJarService.ServiceError, Response] =
+  private def indexHandler(request: Request, buildTool: BuildTool, tailwind: URL): ZIO[SkillsJarCache, SkillsJarService.ServiceError, Response] =
     defer:
       val maybeQuery = request.queryParam("q").filter(_.nonEmpty)
       val skillsJars = maybeQuery.fold(SkillsJarService.list)(SkillsJarService.search).run
-      Response.html(UI.index(skillsJars, maybeQuery, tailwind))
+      Response.html(UI.index(skillsJars, maybeQuery, buildTool, tailwind))
 
 
   private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[Deployer[A] & A & Client, DeployError, Response] =
@@ -35,9 +35,12 @@ object App extends ZIOAppDefault:
 
     Routes(
       Method.GET / Root -> Handler.fromFunctionZIO[Request]: request =>
-        indexHandler(request, tailwind).catchAll: error =>
-          ZIO.succeed(Response.html(UI.index(Seq.empty, None, tailwind, Some(error))))
+        val buildTool = BuildTool.fromParam(request.queryParam("bt").getOrElse("maven"))
+        indexHandler(request, buildTool, tailwind).catchAll: error =>
+          ZIO.succeed(Response.html(UI.index(Seq.empty, None, buildTool, tailwind, Some(error))))
       ,
+      Method.GET / "favicon.ico" -> Handler.fromResource("public/favicon.ico").orDie,
+      Method.GET / "favicon.png" -> Handler.fromResource("public/favicon.png").orDie,
       Method.POST / "deploy" -> Handler.fromFunctionZIO[Request]: request =>
         deployHandler[A](request, tailwind).catchAll: error =>
           ZIO.succeed(Response.html(UI.deployResult(Seq(DeployResult.Failure(error)), tailwind)))
