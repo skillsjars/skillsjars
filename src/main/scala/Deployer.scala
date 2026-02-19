@@ -3,6 +3,7 @@ import com.jamesward.zio_mavencentral.MavenCentral
 import com.jamesward.zio_mavencentral.MavenCentral.Deploy.Sonatype
 import zio.*
 import zio.direct.*
+import zio.http.Client
 import org.bouncycastle.bcpg.{ArmoredOutputStream, BCPGOutputStream, HashAlgorithmTags}
 import org.bouncycastle.openpgp.operator.jcajce.{JcaKeyFingerprintCalculator, JcaPGPContentSignerBuilder, JcePBESecretKeyDecryptorBuilder}
 import org.bouncycastle.openpgp.{PGPSecretKeyRing, PGPSignature, PGPSignatureGenerator}
@@ -19,6 +20,10 @@ trait Deployer[Env]:
   def upload(filename: String, bytes: Chunk[Byte]): ZIO[Env, DeployError, Unit]
 
   def ascSign(toSign: Chunk[Byte]): IO[DeployError, Option[Chunk[Byte]]]
+
+  protected def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[Client & Scope, DeployError, Boolean] =
+    MavenCentral.artifactExists(groupId, artifactId, version)
+      .catchAll(_ => ZIO.succeed(false))
 
   def skillsJar(version: MavenCentral.Version, licenses: NonEmptyChunk[License])(skillLocation: SkillLocation, skillDir: File): ZIO[Any, DeployError, (MavenCentral.GroupArtifactVersion, Chunk[Byte], Chunk[Byte])] =
     defer:
@@ -37,7 +42,7 @@ trait Deployer[Env]:
 
       (gav, pom, jar)
 
-  def deploy(org: Org, repo: Repo): ZIO[Env & Scope, DeployError, DeployOutcome] =
+  def deploy(org: Org, repo: Repo, maybeVersion: Option[MavenCentral.Version] = None): ZIO[Env & Scope & Client, DeployError, DeployOutcome] =
     def artifactBasePath(gav: MavenCentral.GroupArtifactVersion): String =
       val groupPath = gav.groupId.toString.replace('.', '/')
       s"$groupPath/${gav.artifactId}/${gav.version}/${gav.artifactId}-${gav.version}"
@@ -53,7 +58,7 @@ trait Deployer[Env]:
     def md5(data: Chunk[Byte]): Chunk[Byte] =
       hexDigest("MD5", data)
 
-    def skillFiles(gavsRef: Ref[Set[MavenCentral.GroupArtifactVersion]], repoInfo: GitService.RepoInfo)(location: SkillLocation, skillDir: File): ZIO[Scope, DeployError, Chunk[(String, Chunk[Byte])]] =
+    def skillFiles(gavsRef: Ref[Set[MavenCentral.GroupArtifactVersion]], version: MavenCentral.Version, repoInfo: GitService.RepoInfo)(location: SkillLocation, skillDir: File): ZIO[Scope, DeployError, Chunk[(String, Chunk[Byte])]] =
       defer:
         val skillFile = java.io.File(skillDir, "SKILL.md")
         val content = ZStream
@@ -68,7 +73,6 @@ trait Deployer[Env]:
         val meta = SkillParser.parse(skillFile.getPath, content).run
         val groupId = Models.groupId
         val artifactId = artifactIdFor(location.org, location.repo, location.skillName, location.subPath).run
-        val version = repoInfo.version
         val gav = MavenCentral.GroupArtifactVersion(groupId, artifactId, version)
 
         val skillDirLicenses = GitService.detectLicenses(skillDir)
@@ -113,18 +117,32 @@ trait Deployer[Env]:
 
     defer:
       val repoInfo = GitService.cloneAndScan(org, repo).run
+      val version = maybeVersion.getOrElse(repoInfo.version)
+
+      // Check all skills for existing artifacts upfront
+      val gavsByLocation = ZIO.foreach(repoInfo.skills): (location, _) =>
+        artifactIdFor(location.org, location.repo, location.skillName, location.subPath)
+          .map(aid => location -> MavenCentral.GroupArtifactVersion(Models.groupId, aid, version))
+      .run
+
+      val duplicates = ZIO.filter(gavsByLocation): (_, gav) =>
+        checkArtifactExists(gav.groupId, gav.artifactId, gav.version)
+      .run.map(_._2).toSet
+
+      val duplicateLocations = gavsByLocation.filter((_, gav) => duplicates.contains(gav)).map(_._1).toSet
+      val skillsToProcess = repoInfo.skills.filterNot((location, _) => duplicateLocations.contains(location))
 
       val gavsRef = Ref.make(Set.empty[MavenCentral.GroupArtifactVersion]).run
       val skippedRef = Ref.make(List.empty[SkippedSkill]).run
 
       val zipBytes =
         ZStream
-          .fromIterable(repoInfo.skills)
+          .fromIterable(skillsToProcess)
           .mapZIO: (location, skillDir) =>
-            skillFiles(gavsRef, repoInfo)(location, skillDir).catchSome:
+            skillFiles(gavsRef, version, repoInfo)(location, skillDir).catchSome:
               case DeployError.NoLicense(_, _, skillName) =>
                 val reason = "No license found. Add a LICENSE file or specify license in SKILL.md frontmatter."
-                skippedRef.update(_ :+ SkippedSkill(skillName, reason)) *> ZIO.succeed(Chunk.empty)
+                skippedRef.update(_ :+ SkippedSkill(skillName, reason)).as(Chunk.empty)
           .flatMap(ZStream.fromChunk)
           .map: (name, content) =>
             (ArchiveEntry(name = name), ZStream.fromChunk(content))
@@ -135,12 +153,11 @@ trait Deployer[Env]:
       val published = gavsRef.get.run
       val skipped = skippedRef.get.run
 
-      ZIO.fail(DeployError.NoPublishableSkills(org, repo, skipped)).when(published.isEmpty).run
+      if published.nonEmpty then
+        val filename = s"$org-$repo-${repoInfo.version}.zip"
+        upload(filename, zipBytes).run
 
-      val filename = s"$org-$repo-${repoInfo.version}.zip"
-      upload(filename, zipBytes).run
-
-      DeployOutcome(published, skipped)
+      DeployOutcome(published, skipped, duplicates)
 
 
 class LiveDeployer(

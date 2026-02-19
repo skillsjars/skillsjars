@@ -42,7 +42,7 @@ object Models:
 
   case class SkippedSkill(skillName: SkillName, reason: String)
 
-  case class DeployOutcome(published: Set[MavenCentral.GroupArtifactVersion], skipped: List[SkippedSkill])
+  case class DeployOutcome(published: Set[MavenCentral.GroupArtifactVersion], skipped: List[SkippedSkill], duplicates: Set[MavenCentral.GroupArtifactVersion] = Set.empty)
 
   enum DeployError:
     case RepoNotFound(org: Org, repo: Repo)

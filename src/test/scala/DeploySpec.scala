@@ -1,8 +1,8 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
-import zio.concurrent.*
 import zio.direct.*
+import zio.http.Client
 import zio.test.*
 
 import zio.compress.*
@@ -53,7 +53,7 @@ object DeploySpec extends ZIOSpecDefault:
             case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.RepoNotFound])
             case _ => false
           )
-      .provide(MockDeployer.layer)
+      .provide(MockDeployer.layer, Client.default)
       ,
       test("publishes one artifact per skill"):
         // brittle - should be able to specify a commit id for consistency
@@ -78,7 +78,7 @@ object DeploySpec extends ZIOSpecDefault:
               skillsJar.keys.exists(_.endsWith("SKILL.md")),
               skillsJar.keys.exists(_.startsWith("META-INF/resources/skills/anthropics/skills")),
             )
-      .provide(MockDeployer.layer)
+      .provide(MockDeployer.layer, Client.default)
       ,
       test("publish with signing"):
         ZIO.scoped:
@@ -94,7 +94,7 @@ object DeploySpec extends ZIOSpecDefault:
               outcome.published.nonEmpty,
               files.exists(_.endsWith(".asc"))
             )
-      .provide(MockDeployer.layer) @@ TestAspect.withLiveSystem @@ TestAspect.ifEnvSet("OSS_GPG_KEY")
+      .provide(MockDeployer.layer, Client.default) @@ TestAspect.withLiveSystem @@ TestAspect.ifEnvSet("OSS_GPG_KEY")
       ,
       test("repo-level license is used when skill has none"):
         ZIO.scoped:
@@ -115,7 +115,20 @@ object DeploySpec extends ZIOSpecDefault:
               pom.contains("<name>MIT License</name>"),
               pom.contains("<url>https://opensource.org/licenses/MIT</url>"),
             )
-      .provide(MockDeployer.layer)
+      .provide(MockDeployer.layer, Client.default)
+      ,
+      test("detects artifacts that already exist on Maven Central"):
+        ZIO.scoped:
+          defer:
+            val deployer = ZIO.service[Deployer[Any]].run
+            val existingVersion = MavenCentral.Version("2026_02_06-1ed29a0")
+            val outcome = deployer.deploy(Org("anthropics"), Repo("skills"), Some(existingVersion)).run
+
+            assertTrue(
+              outcome.duplicates.exists(_.artifactId.toString.contains("algorithmic-art")),
+              outcome.published.isEmpty,
+            )
+      .provide(MockDeployer.layerWithCheck, Client.default)
     ),
     suite("artifactIdFor")(
       test("basic artifact id"):

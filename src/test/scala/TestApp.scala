@@ -7,6 +7,6 @@ object TestApp extends ZIOAppDefault:
     Server.serve(App.appRoutes[Any](WebJarsDev())).provide(
       Server.default,
       Client.default,
-      MockDeployer.layer,
+      MockDeployer.layerWithCheck,
       SkillsJarService.cacheLayer,
     )

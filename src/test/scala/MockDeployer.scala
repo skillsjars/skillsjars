@@ -1,10 +1,12 @@
 import Models.*
+import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
+import zio.http.Client
 
 import java.nio.file.Files
 
 
-class MockDeployer extends Deployer[Any]:
+class MockDeployer(checkMavenCentral: Boolean = false) extends Deployer[Any]:
 
   var upload: Option[(String, Chunk[Byte])] = None
 
@@ -28,6 +30,11 @@ class MockDeployer extends Deployer[Any]:
       case e: DeployError => ZIO.fail(e)
       case e: Throwable => ZIO.fail(DeployError.PublishFailed(e.getMessage))
 
+  override protected def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[Client & Scope, DeployError, Boolean] =
+    if checkMavenCentral then super.checkArtifactExists(groupId, artifactId, version)
+    else ZIO.succeed(false)
+
 object MockDeployer:
-  val layer = ZLayer.succeed(MockDeployer())
+  val layer: ZLayer[Any, Nothing, Deployer[Any]] = ZLayer.succeed(MockDeployer())
+  val layerWithCheck: ZLayer[Any, Nothing, Deployer[Any]] = ZLayer.succeed(MockDeployer(checkMavenCentral = true))
 

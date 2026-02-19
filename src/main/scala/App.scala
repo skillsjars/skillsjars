@@ -13,7 +13,7 @@ object App extends ZIOAppDefault:
       Response.html(UI.index(skillsJars, maybeQuery, tailwind))
 
 
-  private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[Deployer[A] & A, DeployError, Response] =
+  private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[Deployer[A] & A & Client, DeployError, Response] =
     defer:
       val deployer = ZIO.service[Deployer[A]].run
       val form = request.body.asURLEncodedForm.mapError(e => DeployError.PublishFailed(e.getMessage)).run
@@ -26,9 +26,11 @@ object App extends ZIOAppDefault:
         DeployResult.Success(gav.groupId, gav.artifactId, gav.version)
       val skipped = outcome.skipped.map: s =>
         DeployResult.Skipped(s.skillName, s.reason)
-      Response.html(UI.deployResult(successes ++ skipped, tailwind))
+      val duplicates = outcome.duplicates.toSeq.map: gav =>
+        DeployResult.Failure(DeployError.DuplicateVersion(gav.groupId, gav.artifactId, gav.version))
+      Response.html(UI.deployResult(successes ++ skipped ++ duplicates, tailwind))
 
-  def appRoutes[A : Tag](webJars: WebJars): Routes[Deployer[A] & A & SkillsJarCache, Nothing] =
+  def appRoutes[A : Tag](webJars: WebJars): Routes[Deployer[A] & A & SkillsJarCache & Client, Nothing] =
     val tailwind = webJars.url("tailwindcss__browser", "/dist/index.global.js")
 
     Routes(
