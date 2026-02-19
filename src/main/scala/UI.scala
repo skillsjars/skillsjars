@@ -75,6 +75,12 @@ object UI:
           `class` := "px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer",
           "Search",
         ),
+        maybeQuery.fold(Dom.empty): _ =>
+          a(
+            href := "/",
+            `class` := "px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 cursor-pointer flex items-center",
+            "Clear",
+          ),
       ),
     )
 
