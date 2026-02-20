@@ -117,6 +117,27 @@ object DeploySpec extends ZIOSpecDefault:
             )
       .provide(MockDeployer.layer, Client.default)
       ,
+      test("publishes root-level SKILL.md as org__repo"):
+        ZIO.scoped:
+          defer:
+            val deployer = ZIO.service[Deployer[Any]].run
+            val outcome = deployer.deploy(Org("jdubois"), Repo("dr-jskill")).run
+
+            val mockDeployer = deployer.asInstanceOf[MockDeployer]
+            val files = readJarEntries(mockDeployer.upload.get._2).run
+
+            val gav = outcome.published.find(_.artifactId.toString == "jdubois__dr-jskill").get
+            val skillsJar = readJarEntries(files.find(_._1.endsWith(".jar")).get._2).run
+
+            assertTrue(
+              outcome.published.size == 1,
+              gav.artifactId.toString == "jdubois__dr-jskill",
+              skillsJar.keys.exists(_.endsWith("SKILL.md")),
+              skillsJar.keys.exists(_.startsWith("META-INF/resources/skills/jdubois/dr-jskill/")),
+              !skillsJar.keys.exists(_.contains(".git")),
+            )
+      .provide(MockDeployer.layer, Client.default)
+      ,
       test("detects artifacts that already exist on Maven Central"):
         ZIO.scoped:
           defer:
@@ -133,42 +154,47 @@ object DeploySpec extends ZIOSpecDefault:
     suite("artifactIdFor")(
       test("basic artifact id"):
         defer:
-          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("my-skill")).run
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), List("my-skill")).run
           assertTrue(aid.toString == "myorg__myrepo__my-skill")
       ,
-      test("with subpath"):
+      test("root skill produces org__repo"):
         defer:
-          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("myskill"), List("sub", "path")).run
+          val aid = artifactIdFor(Org("jdubois"), Repo("dr-jskill")).run
+          assertTrue(aid.toString == "jdubois__dr-jskill")
+      ,
+      test("with path"):
+        defer:
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), List("sub", "path", "myskill")).run
           assertTrue(aid.toString == "myorg__myrepo__sub__path__myskill")
       ,
       test("uppercase is lowercased"):
         defer:
-          val aid = artifactIdFor(Org("MyOrg"), Repo("MyRepo"), SkillName("My-Skill")).run
+          val aid = artifactIdFor(Org("MyOrg"), Repo("MyRepo"), List("My-Skill")).run
           assertTrue(aid.toString == "myorg__myrepo__my-skill")
       ,
       test("special characters are dropped"):
         defer:
-          val aid = artifactIdFor(Org("my.org"), Repo("my.repo"), SkillName("my_skill!@#name")).run
+          val aid = artifactIdFor(Org("my.org"), Repo("my.repo"), List("my_skill!@#name")).run
           assertTrue(aid.toString == "myorg__myrepo__my_skillname")
       ,
       test("leading and trailing hyphens/underscores are stripped"):
         defer:
-          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("-my-skill-")).run
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), List("-my-skill-")).run
           assertTrue(aid.toString == "myorg__myrepo__my-skill")
       ,
-      test("subpath components are also sanitized"):
+      test("path components are sanitized"):
         defer:
-          val aid = artifactIdFor(Org("org"), Repo("repo"), SkillName("skill"), List("Sub.Path", "LEVEL_2")).run
+          val aid = artifactIdFor(Org("org"), Repo("repo"), List("Sub.Path", "LEVEL_2", "skill")).run
           assertTrue(aid.toString == "org__repo__subpath__level_2__skill")
       ,
       test("already clean names pass through unchanged"):
         defer:
-          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("my-skill")).run
+          val aid = artifactIdFor(Org("myorg"), Repo("myrepo"), List("my-skill")).run
           assertTrue(aid.toString == "myorg__myrepo__my-skill")
       ,
       test("fails when org contains __"):
         defer:
-          val result = artifactIdFor(Org("my__org"), Repo("myrepo"), SkillName("myskill")).exit.run
+          val result = artifactIdFor(Org("my__org"), Repo("myrepo"), List("myskill")).exit.run
           assertTrue(result match
             case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
             case _ => false
@@ -176,25 +202,58 @@ object DeploySpec extends ZIOSpecDefault:
       ,
       test("fails when repo contains __"):
         defer:
-          val result = artifactIdFor(Org("myorg"), Repo("my__repo"), SkillName("myskill")).exit.run
+          val result = artifactIdFor(Org("myorg"), Repo("my__repo"), List("myskill")).exit.run
           assertTrue(result match
             case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
             case _ => false
           )
       ,
-      test("fails when skill name contains __"):
+      test("fails when path contains __"):
         defer:
-          val result = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("my__skill")).exit.run
+          val result = artifactIdFor(Org("myorg"), Repo("myrepo"), List("my__skill")).exit.run
           assertTrue(result match
             case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
             case _ => false
           )
       ,
-      test("fails when subpath contains __"):
+    ),
+    suite("validateNoOverlaps")(
+      test("no overlap with disjoint paths"):
         defer:
-          val result = artifactIdFor(Org("myorg"), Repo("myrepo"), SkillName("myskill"), List("sub__path")).exit.run
+          val org = Org("o")
+          val repo = Repo("r")
+          val skills = List(
+            (SkillLocation(org, repo, List("a")), java.io.File(".")),
+            (SkillLocation(org, repo, List("b")), java.io.File(".")),
+          )
+          GitService.validateNoOverlaps(org, repo, skills).run
+          assertCompletes
+      ,
+      test("fails when root overlaps with subdir"):
+        defer:
+          val org = Org("o")
+          val repo = Repo("r")
+          val skills = List(
+            (SkillLocation(org, repo, List.empty), java.io.File(".")),
+            (SkillLocation(org, repo, List("sub")), java.io.File(".")),
+          )
+          val result = GitService.validateNoOverlaps(org, repo, skills).exit.run
           assertTrue(result match
-            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.OverlappingSkills])
+            case _ => false
+          )
+      ,
+      test("fails when parent path overlaps with child"):
+        defer:
+          val org = Org("o")
+          val repo = Repo("r")
+          val skills = List(
+            (SkillLocation(org, repo, List("a")), java.io.File(".")),
+            (SkillLocation(org, repo, List("a", "b")), java.io.File(".")),
+          )
+          val result = GitService.validateNoOverlaps(org, repo, skills).exit.run
+          assertTrue(result match
+            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.OverlappingSkills])
             case _ => false
           )
       ,

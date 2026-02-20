@@ -43,10 +43,11 @@ object GitService:
       val version = extractVersion(git).run
 
       val skillsDir = File(tmpDir.toFile, "skills")
-      ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(!skillsDir.isDirectory).run
+      val scanRoot = if skillsDir.isDirectory then skillsDir else tmpDir.toFile
+      val skillLocations = findSkills(scanRoot, org, repo)
 
-      val skillLocations = findSkills(skillsDir, org, repo)
       ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(skillLocations.isEmpty).run
+      validateNoOverlaps(org, repo, skillLocations).run
 
       val licenses =
         val ghLicenses = fetchGitHubLicense(org, repo)
@@ -69,21 +70,28 @@ object GitService:
       MavenCentral.Version(s"$dateStr-$shortHash")
     .orDie
 
-  private def findSkills(skillsDir: File, org: Org, repo: Repo): List[(SkillLocation, File)] =
+  def validateNoOverlaps(org: Org, repo: Repo, skills: List[(SkillLocation, File)]): IO[DeployError, Unit] =
+    val paths = skills.map(_._1.path)
+    paths.combinations(2).collectFirst:
+      case List(a, b) if a.startsWith(b) || b.startsWith(a) => (a, b)
+    match
+      case Some((a, b)) => ZIO.fail(DeployError.OverlappingSkills(org, repo, a, b))
+      case None => ZIO.unit
+
+  private def findSkills(repoDir: File, org: Org, repo: Repo): List[(SkillLocation, File)] =
     def scan(dir: File, pathParts: List[String]): List[(SkillLocation, File)] =
       val files = Option(dir.listFiles()).getOrElse(Array.empty[File]).toList
       val hasSkillMd = files.exists(f => f.isFile && f.getName == "SKILL.md")
       val thisSkill =
         if hasSkillMd then
-          val skillName = SkillName(dir.getName)
-          List((SkillLocation(org, repo, pathParts.dropRight(1), skillName), dir))
+          List((SkillLocation(org, repo, pathParts), dir))
         else
           Nil
-      val subSkills = files.filter(_.isDirectory).flatMap(subDir => scan(subDir, pathParts :+ subDir.getName))
+      val subSkills = files
+        .filter(f => f.isDirectory && !f.getName.startsWith("."))
+        .flatMap(subDir => scan(subDir, pathParts :+ subDir.getName))
       thisSkill ++ subSkills
-
-    val subDirs = Option(skillsDir.listFiles()).getOrElse(Array.empty[File]).filter(_.isDirectory).toList
-    subDirs.flatMap(dir => scan(dir, List(dir.getName)))
+    scan(repoDir, List.empty)
 
   private val licenseFileNames = List("LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "LICENCE.md", "LICENCE.txt")
 

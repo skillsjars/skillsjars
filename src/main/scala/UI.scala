@@ -277,6 +277,10 @@ object UI:
           case DeployError.InvalidComponent(component, reason) => s"Invalid component '$component': $reason"
           case DeployError.DuplicateVersion(gid, aid, v) => s"Duplicate version: $gid:$aid:$v"
           case DeployError.NoLicense(org, repo, skillName) => s"No license found for skill '$skillName' in $org/$repo. Add a LICENSE file or specify license in SKILL.md frontmatter."
+          case DeployError.OverlappingSkills(org, repo, path1, path2) =>
+            val p1 = if path1.isEmpty then "/" else path1.mkString("/")
+            val p2 = if path2.isEmpty then "/" else path2.mkString("/")
+            s"Overlapping skills in $org/$repo: '$p1' and '$p2'. A skill directory cannot be an ancestor of another."
           case DeployError.NoPublishableSkills(org, repo, skipped) =>
             val reasons = skipped.map(s => s"${s.skillName}: ${s.reason}").mkString("; ")
             s"No skills could be published from $org/$repo. $reasons"

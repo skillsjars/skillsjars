@@ -14,15 +14,14 @@ object JarCreator:
     skillDir: File,
     org: Org,
     repo: Repo,
-    skillName: SkillName,
+    path: List[String],
     pom: Chunk[Byte],
     groupId: MavenCentral.GroupId,
     artifactId: MavenCentral.ArtifactId,
     version: MavenCentral.Version,
-    subPath: List[String] = List.empty,
   ): IO[DeployError, Chunk[Byte]] =
-    val subPathPart = if subPath.isEmpty then "" else subPath.mkString("", "/", "/")
-    val resourcePrefix = s"META-INF/resources/skills/$org/$repo/$subPathPart$skillName/"
+    val pathPart = if path.isEmpty then "" else path.mkString("", "/", "/")
+    val resourcePrefix = s"META-INF/resources/skills/$org/$repo/$pathPart"
     val mavenPrefix = s"META-INF/maven/$groupId/$artifactId/"
 
     val manifestContent =
@@ -46,6 +45,9 @@ object JarCreator:
     val skillFileEntries = ZStream.fromJavaStream(Files.walk(skillDir.toPath))
       .mapError(e => DeployError.PublishFailed(s"Failed to list skill files: ${e.getMessage}"))
       .filterZIO(path => ZIO.attempt(!Files.isSameFile(path, skillDir.toPath)).orDie)
+      .filter: path =>
+        val relative = skillDir.toPath.relativize(path).toString.replace('\\', '/')
+        !relative.startsWith(".git")
       .mapZIO: path =>
         ZIO.attempt:
           val relative = skillDir.toPath.relativize(path).toString.replace('\\', '/')

@@ -36,7 +36,6 @@ object JarCreatorSpec extends ZIOSpecDefault:
 
           org = Org("myorg")
           repo = Repo("myrepo")
-          skillName = SkillName("myskill")
           pom = Chunk.fromArray("<project>...</project>".getBytes)
           groupId = MavenCentral.GroupId("com.skillsjars")
           artifactId = MavenCentral.ArtifactId("myorg__myrepo__myskill")
@@ -46,7 +45,7 @@ object JarCreatorSpec extends ZIOSpecDefault:
             tempDir,
             org,
             repo,
-            skillName,
+            List("myskill"),
             pom,
             groupId,
             artifactId,
@@ -87,8 +86,6 @@ object JarCreatorSpec extends ZIOSpecDefault:
 
           org = Org("myorg")
           repo = Repo("myrepo")
-          skillName = SkillName("myskill")
-          subPath = List("sub", "path")
           pom = Chunk.fromArray("<project>...</project>".getBytes)
           groupId = MavenCentral.GroupId("com.skillsjars")
           artifactId = MavenCentral.ArtifactId("myorg__myrepo__sub__path__myskill")
@@ -98,12 +95,11 @@ object JarCreatorSpec extends ZIOSpecDefault:
             tempDir,
             org,
             repo,
-            skillName,
+            List("sub", "path", "myskill"),
             pom,
             groupId,
             artifactId,
-            version,
-            subPath
+            version
           )
 
           entries <- readJarEntries(jarBytes)

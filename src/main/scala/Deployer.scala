@@ -34,11 +34,11 @@ trait Deployer[Env]:
         .run
       val meta = SkillParser.parse(java.io.File(skillDir, "SKILL.md").getPath, content).run
       val groupId = Models.groupId
-      val artifactId = artifactIdFor(skillLocation.org, skillLocation.repo, skillLocation.skillName, skillLocation.subPath).run
+      val artifactId = artifactIdFor(skillLocation.org, skillLocation.repo, skillLocation.path).run
       val gav = MavenCentral.GroupArtifactVersion(groupId, artifactId, version)
 
       val pom = PomGenerator.generate(groupId, artifactId, version, meta.name, meta.description, licenses, skillLocation.org, skillLocation.repo)
-      val jar = JarCreator.create(skillDir, skillLocation.org, skillLocation.repo, skillLocation.skillName, pom, groupId, artifactId, version, skillLocation.subPath).run
+      val jar = JarCreator.create(skillDir, skillLocation.org, skillLocation.repo, skillLocation.path, pom, groupId, artifactId, version).run
 
       (gav, pom, jar)
 
@@ -72,7 +72,7 @@ trait Deployer[Env]:
 
         val meta = SkillParser.parse(skillFile.getPath, content).run
         val groupId = Models.groupId
-        val artifactId = artifactIdFor(location.org, location.repo, location.skillName, location.subPath).run
+        val artifactId = artifactIdFor(location.org, location.repo, location.path).run
         val gav = MavenCentral.GroupArtifactVersion(groupId, artifactId, version)
 
         val skillDirLicenses = GitService.detectLicenses(skillDir)
@@ -83,16 +83,18 @@ trait Deployer[Env]:
           else
             // Fallback: check for a LICENSE file with non-SPDX content
             val repoUrl = s"https://github.com/$org/$repo"
-            val subPathStr = if location.subPath.nonEmpty then location.subPath.mkString("/", "/", "") else ""
             GitService.findLicenseFile(skillDir) match
               case Some(fileName) =>
                 val licenseName = meta.rawLicense.getOrElse("See LICENSE file")
-                List(License(licenseName, s"$repoUrl/blob/main/skills$subPathStr/${location.skillName}/$fileName"))
+                if location.path.isEmpty then
+                  List(License(licenseName, s"$repoUrl/blob/main/$fileName"))
+                else
+                  List(License(licenseName, s"$repoUrl/blob/main/${location.path.mkString("/")}/$fileName"))
               case None => Nil
         val licenses = ZIO.fromOption(NonEmptyChunk.fromIterableOption(resolvedList))
           .orElseFail(DeployError.NoLicense(org, repo, location.skillName)).run
         val pom = PomGenerator.generate(groupId, artifactId, version, meta.name, meta.description, licenses, org, repo)
-        val jar = JarCreator.create(skillDir, org, repo, location.skillName, pom, groupId, artifactId, version, location.subPath).run
+        val jar = JarCreator.create(skillDir, org, repo, location.path, pom, groupId, artifactId, version).run
 
         val maybePomAsc = ascSign(pom).run
         val maybeJarAsc = ascSign(jar).run
@@ -121,7 +123,7 @@ trait Deployer[Env]:
 
       // Check all skills for existing artifacts upfront
       val gavsByLocation = ZIO.foreach(repoInfo.skills): (location, _) =>
-        artifactIdFor(location.org, location.repo, location.skillName, location.subPath)
+        artifactIdFor(location.org, location.repo, location.path)
           .map(aid => location -> MavenCentral.GroupArtifactVersion(Models.groupId, aid, version))
       .run
 

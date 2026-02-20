@@ -36,7 +36,8 @@ object Models:
 
   case class SkillMeta(name: SkillName, description: String, licenses: List[License], rawLicense: Option[String] = None)
 
-  case class SkillLocation(org: Org, repo: Repo, subPath: List[String], skillName: SkillName)
+  case class SkillLocation(org: Org, repo: Repo, path: List[String]):
+    def skillName: SkillName = if path.isEmpty then repo else path.last
 
   case class SkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, versions: Seq[MavenCentral.Version], name: String, description: String)
 
@@ -51,6 +52,7 @@ object Models:
     case InvalidComponent(component: String, reason: String)
     case DuplicateVersion(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version)
     case NoLicense(org: Org, repo: Repo, skillName: SkillName)
+    case OverlappingSkills(org: Org, repo: Repo, path1: List[String], path2: List[String])
     case NoPublishableSkills(org: Org, repo: Repo, skipped: List[SkippedSkill])
     case PublishFailed(reason: String)
 
@@ -77,8 +79,8 @@ object Models:
 
   val groupId: MavenCentral.GroupId = MavenCentral.GroupId("com.skillsjars")
 
-  def artifactIdFor(org: Org, repo: Repo, skillName: SkillName, subPath: List[String] = List.empty): IO[DeployError, MavenCentral.ArtifactId] =
-    val components = List(org: String, repo: String) ++ subPath ++ List(skillName: String)
+  def artifactIdFor(org: Org, repo: Repo, path: List[String] = List.empty): IO[DeployError, MavenCentral.ArtifactId] =
+    val components = List(org: String, repo: String) ++ path
     components.find(_.contains("__")) match
       case Some(c) => ZIO.fail(DeployError.InvalidComponent(c, "contains '__'"))
       case None => ZIO.succeed(MavenCentral.ArtifactId(components.map(sanitize).mkString("__")))
