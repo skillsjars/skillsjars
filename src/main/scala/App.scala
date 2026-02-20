@@ -53,10 +53,13 @@ object App extends ZIOAppDefault:
         maybePort.flatMap(_.toIntOption).fold(Server.default)(Server.defaultWithPort)
     .flatten
 
+  private val loggingClient: ZLayer[Any, Throwable, Client] =
+    Client.default.map(env => ZEnvironment(env.get[Client] @@ ZClientAspect.requestLogging()))
+
   def run =
     Server.serve(appRoutes[MavenCentral.Deploy.Sonatype](WebJarsLive())).provide(
       serverLayer,
-      Client.default,
+      loggingClient,
       MavenCentral.Deploy.Sonatype.Live,
       Deployer.live,
       SkillsJarService.cacheLayer,

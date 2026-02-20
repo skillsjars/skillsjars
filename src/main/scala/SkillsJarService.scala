@@ -8,8 +8,6 @@ import zio.http.Client
 // why do we need this?
 case class SkillsJarCache(cache: Cache[String, SkillsJarService.ServiceError, Seq[SkillsJar]])
 
-// all of this seems off
-// todo: integration tests
 object SkillsJarService:
 
   given CanEqual[String, String] = CanEqual.derived
@@ -47,20 +45,16 @@ object SkillsJarService:
           .map(_.value)
           .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.ArtifactId]))
           .run
-        val results = ZIO.foreach(entries): entry =>
+        val results = ZIO.foreachPar(entries): entry =>
           ZIO.scoped:
-            MavenCentral.isArtifact(gid, entry)
-              .catchAll(_ => ZIO.succeed(false))
-              .flatMap:
-                case true => fetchSkillsJar(gid, entry).map(Some(_)).catchAll(_ => ZIO.none)
-                case false => ZIO.none
+            fetchSkillsJar(gid, entry).map(Some(_)).catchAll(_ => ZIO.none)
         .run
         results.flatten
 
   private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): ZIO[Client & Scope, Throwable, SkillsJar] =
     defer:
       val versions = MavenCentral.searchVersions(groupId, artifactId).map(_.value)
-        .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.Version])).run
+        .mapError(e => RuntimeException(s"Failed to fetch versions for $artifactId: $e")).run
       val nameAndDesc = versions.headOption.fold(ZIO.succeed((artifactId.toString, ""))): latestVersion =>
         MavenCentral.pom(groupId, artifactId, latestVersion).map: pomXml =>
           val n = (pomXml \ "name").text
