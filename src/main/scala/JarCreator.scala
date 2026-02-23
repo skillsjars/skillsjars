@@ -21,7 +21,7 @@ object JarCreator:
     version: MavenCentral.Version,
   ): IO[DeployError, Chunk[Byte]] =
     val pathPart = if path.isEmpty then "" else path.mkString("", "/", "/")
-    val resourcePrefix = s"META-INF/resources/skills/$org/$repo/$pathPart"
+    val resourcePrefix = s"META-INF/skills/$org/$repo/$pathPart"
     val mavenPrefix = s"META-INF/maven/$groupId/$artifactId/"
 
     val manifestContent =

@@ -53,8 +53,8 @@ object SkillsJarService:
 
   private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): ZIO[Client & Scope, Throwable, SkillsJar] =
     defer:
-      val versions = MavenCentral.searchVersions(groupId, artifactId).map(_.value)
-        .mapError(e => RuntimeException(s"Failed to fetch versions for $artifactId: $e")).run
+      val versions = MavenCentral.searchVersions(groupId, artifactId)
+        .mapBoth(e => RuntimeException(s"Failed to fetch versions for $artifactId: $e"), _.value).run
       val nameAndDesc = versions.headOption.fold(ZIO.succeed((artifactId.toString, ""))): latestVersion =>
         MavenCentral.pom(groupId, artifactId, latestVersion).map: pomXml =>
           val n = (pomXml \ "name").text

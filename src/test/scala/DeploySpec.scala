@@ -76,7 +76,7 @@ object DeploySpec extends ZIOSpecDefault:
               files.keys.count(_.startsWith(s"com/skillsjars/${canvasGav.artifactId}/")) == 6,
               files.contains(s"com/skillsjars/${canvasGav.artifactId}/${canvasGav.version}/${canvasGav.artifactId}-${canvasGav.version}.jar"),
               skillsJar.keys.exists(_.endsWith("SKILL.md")),
-              skillsJar.keys.exists(_.startsWith("META-INF/resources/skills/anthropics/skills")),
+              skillsJar.keys.exists(_.startsWith("META-INF/skills/anthropics/skills")),
             )
       .provide(MockDeployer.layer, Client.default)
       ,
@@ -133,7 +133,7 @@ object DeploySpec extends ZIOSpecDefault:
               outcome.published.size == 1,
               gav.artifactId.toString == "jdubois__dr-jskill",
               skillsJar.keys.exists(_.endsWith("SKILL.md")),
-              skillsJar.keys.exists(_.startsWith("META-INF/resources/skills/jdubois/dr-jskill/")),
+              skillsJar.keys.exists(_.startsWith("META-INF/skills/jdubois/dr-jskill/")),
               !skillsJar.keys.exists(_.contains(".git")),
             )
       .provide(MockDeployer.layer, Client.default)

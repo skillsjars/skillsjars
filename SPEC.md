@@ -10,46 +10,52 @@ Users can publish new versions of SkillJars.
 
 ## SkillJar Structure
 
-Skills have Maven coordinates like `com.skillsjars.myorg.myrepo:myskill:2026_02_13-1af0a2e`
+Skills have Maven coordinates like `com.skillsjars:myorg__myrepo__myskill:2026_02_13-1af0a2e`
+
+The groupId is always `com.skillsjars`. The artifactId is constructed from the org, repo, and skill path joined with `__` (each component is lowercased with non-alphanumeric characters except `-` and `_` removed).
 
 Each version has files that contains one skill from a GitHub repo.
-For instance, the `com.skillsjars.myorg.myrepo:myskill:2026_02_13-1af0a2e` SkillsJar would be based on the GitHub repo `myorg/myrepo` containing the file:
+For instance, the `com.skillsjars:myorg__myrepo__myskill:2026_02_13-1af0a2e` SkillsJar would be based on the GitHub repo `myorg/myrepo` containing the file:
 ```
 skills/myskill/SKILL.md
 ```
 
 The resulting SkillsJar would contain this file:
 ```
-/META-INF/resources/skills/myorg/myrepo/myskill/SKILL.md
+/META-INF/skills/myorg/myrepo/myskill/SKILL.md
 ```
 
 Given a GitHub repo `myorg/myrepo` which has a skills directory containing multiple skills, multiple SkillsJars would be created.
 For example, if `myorg/myrepo` contained `skills/skill1/SKILL.md` and `skills/skillgroup/skill1/SKILL.md` then there would be two SkillsJars:
-`com.skillsjars.myorg.myrepo:skill1:2026_02_13-1af0a2e`
-`com.skillsjars.myorg.myrepo.skillgroup:skill1:2026_02_13-1af0a2e`
+`com.skillsjars:myorg__myrepo__skill1:2026_02_13-1af0a2e`
+`com.skillsjars:myorg__myrepo__skillgroup__skill1:2026_02_13-1af0a2e`
+
+If a repo has a root-level `SKILL.md` (and no `skills/` subdir), the artifactId is just `org__repo` (e.g. `com.skillsjars:jdubois__dr-jskill:2026_02_19-a951a5e`).
 
 Some skills may contain additional files beyond the `SKILL.md` file. These are included in the SkillsJar.
 
 ## Deployment
 
 When deploying a new version of a SkillJar (via a web form or POST request):
-- POST request has an empty body and two query parameters: `org` and `repo`
-- The GitHub public repo is cloned
-- Check for a `skills` subdir and fail if it doesn't exist
-- For each `SKILL.md` under the `skills` subdir (no limit to depth), create a SkillsJar with the version consisting of the latest repo commit author date & short commit hash (e.g. `2026_02_13-1af0a2e`)
-- The Maven groupId and artifactId are derived from the GitHub org/repo and skill directory name (which can be nested)
-- Check for existing SkillsJars with the same coordinates (duplicates are an error)
+- POST to `/deploy` with form body containing `org` and `repo` parameters
+- The GitHub public repo is shallow-cloned (depth 1)
+- If a `skills/` subdir exists, scan it for SKILL.md files; otherwise scan the repo root
+- Fail if no SKILL.md files are found
+- Validate no overlapping skill paths (e.g. both `/a` and `/a/b` having SKILL.md)
+- For each `SKILL.md` (no limit to depth), create a SkillsJar with the version consisting of the latest repo commit author date & short commit hash (e.g. `2026_02_13-1af0a2e`)
+- Check for existing SkillsJars with the same coordinates on Maven Central (duplicates are skipped)
 - The `pom.xml` metadata should use the `name` and `description` from the `SKILL.md` file using the https://agentskills.io/specification format
-- The license specified in the `pom.xml` should use the license in the SKILL.md if specified or the GitHub repo's license
-- Publish the SkillsJars to Maven Central
+- License resolution order: SKILL.md frontmatter license field, then skill directory LICENSE file, then GitHub API license endpoint, then repo root LICENSE file. Skills without a license are skipped (not failed).
+- JAR and POM files are signed with GPG when `OSS_GPG_KEY` env var is set
+- All artifacts are bundled into a single ZIP and uploaded to Maven Central
 
 ## Web UI
 
-- Cache the list of SkillJars in memory
+- Cache the list of SkillJars in memory (1 hour TTL for successful fetches, no caching on failure)
 - Display the list of SkillJars (with a drop down for version selection)
-- Filter / Search for SkillJars (by name or description with basic substring matching)
+- Build tool selector (Maven/Gradle/sbt) to show appropriate dependency snippets
+- Filter / Search for SkillJars (by name or description with case-insensitive substring matching)
 - No pagination for now
-- DO NOT USE JavaScript
 
 ## Technologies & Style
 

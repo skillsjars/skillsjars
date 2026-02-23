@@ -54,16 +54,15 @@ object JarCreatorSpec extends ZIOSpecDefault:
 
           entries <- readJarEntries(jarBytes)
         yield
-          val resourcePrefix = "META-INF/resources/skills/myorg/myrepo/myskill/"
+          val resourcePrefix = "META-INF/skills/myorg/myrepo/myskill/"
           val mavenPrefix = "META-INF/maven/com.skillsjars/myorg__myrepo__myskill/"
 
           assertTrue(
             entries.contains("META-INF/"),
             entries.contains("META-INF/MANIFEST.MF"),
-            entries.contains("META-INF/resources/"),
-            entries.contains("META-INF/resources/skills/"),
-            entries.contains("META-INF/resources/skills/myorg/"),
-            entries.contains("META-INF/resources/skills/myorg/myrepo/"),
+            entries.contains("META-INF/skills/"),
+            entries.contains("META-INF/skills/myorg/"),
+            entries.contains("META-INF/skills/myorg/myrepo/"),
             entries.contains(s"${resourcePrefix}SKILL.md"),
             entries.contains(s"${resourcePrefix}other.txt"),
             entries.contains(s"${resourcePrefix}subdir/"),
@@ -104,17 +103,16 @@ object JarCreatorSpec extends ZIOSpecDefault:
 
           entries <- readJarEntries(jarBytes)
         yield
-          val resourcePrefix = "META-INF/resources/skills/myorg/myrepo/sub/path/myskill/"
+          val resourcePrefix = "META-INF/skills/myorg/myrepo/sub/path/myskill/"
           val mavenPrefix = "META-INF/maven/com.skillsjars/myorg__myrepo__sub__path__myskill/"
 
           assertTrue(
             entries.contains("META-INF/"),
-            entries.contains("META-INF/resources/"),
-            entries.contains("META-INF/resources/skills/"),
-            entries.contains("META-INF/resources/skills/myorg/"),
-            entries.contains("META-INF/resources/skills/myorg/myrepo/"),
-            entries.contains("META-INF/resources/skills/myorg/myrepo/sub/"),
-            entries.contains("META-INF/resources/skills/myorg/myrepo/sub/path/"),
+            entries.contains("META-INF/skills/"),
+            entries.contains("META-INF/skills/myorg/"),
+            entries.contains("META-INF/skills/myorg/myrepo/"),
+            entries.contains("META-INF/skills/myorg/myrepo/sub/"),
+            entries.contains("META-INF/skills/myorg/myrepo/sub/path/"),
             entries.contains(s"${resourcePrefix}SKILL.md"),
             entries.contains(s"${mavenPrefix}pom.xml"),
             String(entries(s"${resourcePrefix}SKILL.md").toArray) == "subpath skill"
