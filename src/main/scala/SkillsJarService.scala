@@ -42,7 +42,7 @@ object SkillsJarService:
       defer:
         val gid = Models.groupId
         val entries = MavenCentral.searchArtifacts(gid)
-          .map(_.value)
+          .map(_.value.filterNot(a => a.toString.endsWith("maven-plugin") || a.toString.endsWith("gradle-plugin")))
           .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.ArtifactId]))
           .run
         val results = ZIO.foreachPar(entries): entry =>

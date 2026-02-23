@@ -7,7 +7,13 @@ import java.net.URLEncoder
 
 object UI:
 
-  def page(pageTitle: String, pageContent: Dom, tailwind: URL): Dom =
+  private def navLink(href0: String, label: String, active: Boolean): Dom =
+    val cls =
+      if active then "px-3 py-1.5 rounded-md text-sm font-medium bg-blue-600 text-white"
+      else "px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+    a(href := href0, `class` := cls, label)
+
+  def page(pageTitle: String, pageContent: Dom, tailwind: URL, currentPath: String = "/"): Dom =
     html(
       head(
         title(pageTitle),
@@ -24,9 +30,17 @@ object UI:
           `class` := "max-w-4xl mx-auto px-4 py-8",
           header(
             `class` := "mb-8",
-            h1(
-              `class` := "text-3xl font-bold text-gray-900",
-              a(href := "/", "SkillsJars"),
+            div(
+              `class` := "flex items-center justify-between",
+              h1(
+                `class` := "text-3xl font-bold text-gray-900",
+                a(href := "/", "SkillsJars"),
+              ),
+              nav(
+                `class` := "flex gap-1 bg-gray-200 rounded-lg p-1",
+                navLink("/", "Find SkillsJars", currentPath == "/"),
+                navLink("/docs", "Documentation", currentPath == "/docs"),
+              ),
             ),
             p(`class` := "text-gray-600 mt-1", "Agent Skills on Maven Central"),
           ),
@@ -242,6 +256,121 @@ object UI:
       }
     """)
 
+  def docs(tailwind: URL): Dom =
+    page(
+      "SkillsJars - Docs",
+      div(
+        // Intro
+        div(
+          `class` := "prose max-w-none",
+          h2(`class` := "text-2xl font-bold text-gray-900 mt-6 mb-4", "Using SkillsJars"),
+          p(`class` := "text-gray-700 mb-4",
+            """SkillsJars are Agent Skills packaged as JARs on Maven Central.
+              |They can be used with AI code assistants, custom agents, and frameworks like Spring AI.
+              |Managing Agent Skills as packaged dependencies enables versioning, grouping as transitive dependencies, and avoiding copy & pasting files.
+              |""".stripMargin
+          ),
+        ),
+
+        // AI Code Assistants
+        div(
+          `class` := "bg-white rounded-lg shadow p-6 mt-6",
+          h3(`class` := "text-xl font-bold text-gray-900 mb-3", "AI Code Assistants"),
+          p(`class` := "text-gray-700 mb-4",
+            "Most AI code assistants expect Agent Skills as files on the filesystem. The SkillsJars build plugins extract skills from your project dependencies into a directory your assistant can read.",
+          ),
+
+          // Step 1
+          p(`class` := "font-semibold text-gray-800 mb-2", "1. Add SkillsJar dependencies"),
+          p(`class` := "text-gray-700 mb-4",
+            "Browse Agent Skills on ",
+            a(href := "/", `class` := "text-blue-600 hover:underline", "SkillsJars.com"),
+            " and add them to your project using the dependency snippet for your build tool.",
+          ),
+
+          // Step 2 - Gradle
+          p(`class` := "font-semibold text-gray-800 mb-2", "2. Add the extraction plugin"),
+
+          p(`class` := "text-gray-700 mt-4 mb-1", "Gradle:"),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+            """plugins {
+    id("com.skillsjars.gradle-plugin") version "0.0.2"
+}""",
+          ),
+
+          p(`class` := "text-gray-700 mb-1", "Maven:"),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+            """<build>
+    <plugins>
+        <plugin>
+            <groupId>com.skillsjars</groupId>
+            <artifactId>maven-plugin</artifactId>
+            <version>0.0.2</version>
+        </plugin>
+    </plugins>
+</build>""",
+          ),
+
+          // Step 3
+          p(`class` := "font-semibold text-gray-800 mb-2", "3. Extract skills"),
+          p(`class` := "text-gray-700 mb-1",
+            "Run the extraction command, specifying the directory your AI assistant expects:",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-2",
+            "# Gradle\n./gradlew extractSkillsJars -Pdir=.kiro/skills\n\n# Maven\n./mvnw skillsjars:extract -Ddir=.kiro/skills",
+          ),
+          p(`class` := "text-sm text-gray-500 mb-4",
+            "Replace ", code(`class` := "bg-gray-100 px-1 rounded", ".kiro/skills"), " with the path your AI assistant uses for skills.",
+          ),
+
+          // AGENTS.md
+          div(
+            `class` := "bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4",
+            p(`class` := "font-semibold text-blue-800 mb-1", "Tip: AGENTS.md"),
+            p(`class` := "text-sm text-blue-700",
+              "Your project's ", code(`class` := "bg-blue-100 px-1 rounded", "AGENTS.md"),
+              " can instruct AI agents to run the extraction command before working with the project. This way, skills are always available without manual setup.",
+            ),
+          ),
+        ),
+
+        // Custom Agents
+        div(
+          `class` := "bg-white rounded-lg shadow p-6 mt-6",
+          h3(`class` := "text-xl font-bold text-gray-900 mb-3", "Custom Agents"),
+
+          // Spring AI
+          div(
+            `class` := "mb-6",
+            h4(`class` := "text-lg font-semibold text-gray-800 mb-2", "Spring AI"),
+            p(`class` := "text-gray-700 mb-2",
+              "The ",
+              a(href := "https://github.com/spring-ai-community/spring-ai-agent-utils", `class` := "text-blue-600 hover:underline", "Spring AI Agent Utils"),
+              " project provides a SkillsTool that integrates Agent Skills directly with Spring AI agents. Support for SkillsJars is coming soon.",
+            ),
+          ),
+
+          // Direct JAR reading
+          div(
+            h4(`class` := "text-lg font-semibold text-gray-800 mb-2", "Reading SkillsJars Directly"),
+            p(`class` := "text-gray-700 mb-2",
+              "Custom agents on the JVM can read skills directly from SkillsJar dependencies on the classpath. Skills are located at a well-known path inside the JAR:",
+            ),
+            pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-2",
+              "META-INF/skills/<org>/<repo>/<skill>/SKILL.md",
+            ),
+            p(`class` := "text-gray-700",
+              "Each ", code(`class` := "bg-gray-100 px-1 rounded", "SKILL.md"),
+              " follows the ", a(href := "https://agentskills.io/specification", `class` := "text-blue-600 hover:underline", "Agent Skills specification"),
+              " with YAML front-matter containing the skill name, description, and other metadata. Additional files referenced by the skill are included alongside the ", code(`class` := "bg-gray-100 px-1 rounded", "SKILL.md"), ".",
+            ),
+          ),
+        ),
+      ),
+      tailwind,
+      currentPath = "/docs",
+    )
+
   def deployResult(results: Seq[DeployResult], tailwind: URL): Dom =
     page(
       "Deploy Results",
@@ -260,7 +389,7 @@ object UI:
       case DeployResult.Success(groupId, artifactId, version) =>
         div(
           `class` := "bg-green-50 border border-green-200 rounded-lg p-4",
-          p(`class` := "font-semibold text-green-800", "Deployed successfully"),
+          p(`class` := "font-semibold text-green-800", "Deployed successfully. It will take ~1hr for the artifact to be available on Maven Central."),
           p(`class` := "text-sm font-mono text-green-700 mt-1", s"$groupId:$artifactId:$version"),
         )
       case DeployResult.Skipped(skillName, reason) =>

@@ -39,6 +39,7 @@ object App extends ZIOAppDefault:
         indexHandler(request, buildTool, tailwind).catchAll: error =>
           ZIO.succeed(Response.html(UI.index(Seq.empty, None, buildTool, tailwind, Some(error))))
       ,
+      Method.GET / "docs" -> handler(Response.html(UI.docs(tailwind))),
       Method.GET / "favicon.ico" -> Handler.fromResource("public/favicon.ico").orDie,
       Method.GET / "favicon.png" -> Handler.fromResource("public/favicon.png").orDie,
       Method.POST / "deploy" -> Handler.fromFunctionZIO[Request]: request =>
