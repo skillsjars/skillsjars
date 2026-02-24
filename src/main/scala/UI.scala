@@ -346,7 +346,54 @@ object UI:
             p(`class` := "text-gray-700 mb-2",
               "The ",
               a(href := "https://github.com/spring-ai-community/spring-ai-agent-utils", `class` := "text-blue-600 hover:underline", "Spring AI Agent Utils"),
-              " project provides a SkillsTool that integrates Agent Skills directly with Spring AI agents. Support for SkillsJars is coming soon.",
+              " project provides a SkillsTool that integrates Agent Skills directly with Spring AI agents. SkillsJars work out of the box — skills are read directly from the classpath with no extraction step needed.",
+            ),
+
+            p(`class` := "font-semibold text-gray-800 mt-4 mb-2", "1. Add dependencies"),
+            p(`class` := "text-gray-700 mb-1", "Add the Spring AI Agent Utils library and any SkillsJar dependencies to your project:"),
+            pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+              """<dependency>
+    <groupId>org.springaicommunity</groupId>
+    <artifactId>spring-ai-agent-utils</artifactId>
+    <version>0.5.0</version>
+</dependency>
+
+<!-- SkillsJar dependencies, for example -->
+<dependency>
+    <groupId>com.skillsjars</groupId>
+    <artifactId>browser-use__browser-use__browser-use</artifactId>
+    <version>2026_02_23-1d154e1</version>
+</dependency>""",
+            ),
+
+            p(`class` := "font-semibold text-gray-800 mb-2", "2. Configure the skills path"),
+            p(`class` := "text-gray-700 mb-1",
+              "In ", code(`class` := "bg-gray-100 px-1 rounded", "application.properties"), ", point to the classpath location where SkillsJars store their skills:",
+            ),
+            pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+              "agent.skills.paths=classpath:/META-INF/skills",
+            ),
+
+            p(`class` := "font-semibold text-gray-800 mb-2", "3. Wire up the SkillsTool"),
+            p(`class` := "text-gray-700 mb-1", "Use the SkillsTool builder to load skills and add them to your ChatClient:"),
+            pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+              """@Value("${agent.skills.paths}") List<Resource> skillPaths;
+
+ChatClient chatClient = chatClientBuilder
+        .defaultToolCallbacks(
+                SkillsTool.builder().addSkillsResources(skillPaths).build()
+        )
+        .build();""",
+            ),
+
+            div(
+              `class` := "bg-blue-50 border border-blue-200 rounded-lg p-4 mt-2",
+              p(`class` := "font-semibold text-blue-800 mb-1", "Example project"),
+              p(`class` := "text-sm text-blue-700",
+                "See the ",
+                a(href := "https://github.com/skillsjars/skillsjars-example-spring-ai", `class` := "text-blue-600 hover:underline", "skillsjars-example-spring-ai"),
+                " repository for a complete working example.",
+              ),
             ),
           ),
 
