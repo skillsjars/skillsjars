@@ -43,7 +43,16 @@ object Models:
 
   case class SkippedSkill(skillName: SkillName, reason: String)
 
-  case class DeployOutcome(published: Set[MavenCentral.GroupArtifactVersion], skipped: List[SkippedSkill], duplicates: Set[MavenCentral.GroupArtifactVersion] = Set.empty)
+  case class DeployOutcome(published: Set[MavenCentral.GroupArtifactVersion], skipped: List[SkippedSkill], duplicates: Set[MavenCentral.GroupArtifactVersion] = Set.empty):
+    def toResults: Seq[DeployResult] =
+      published.toSeq.map(DeployResult.Success(_)) ++
+        skipped.map(DeployResult.Skipped(_)) ++
+        duplicates.toSeq.map(gav => DeployResult.Failure(DeployError.DuplicateVersion(gav.groupId, gav.artifactId, gav.version)))
+
+  enum DeployResult:
+    case Success(gav: MavenCentral.GroupArtifactVersion)
+    case Skipped(skill: SkippedSkill)
+    case Failure(error: DeployError)
 
   enum DeployError:
     case RepoNotFound(org: Org, repo: Repo)
@@ -73,6 +82,12 @@ object Models:
   given CanEqual[License, License] = CanEqual.derived
   given CanEqual[DeployError, DeployError] = CanEqual.derived
   given CanEqual[BuildTool, BuildTool] = CanEqual.derived
+  given CanEqual[DeployJobStatus, DeployJobStatus] = CanEqual.derived
+
+  enum DeployJobStatus:
+    case Running
+    case Done(results: Seq[DeployResult])
+    case Failed(error: DeployError)
 
   private def sanitize(s: String): String =
     s.toLowerCase.replaceAll("[^a-z0-9_-]", "").replaceAll("^[-_]+|[-_]+$", "")

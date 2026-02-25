@@ -10,6 +10,12 @@ import zio.stream.*
 
 object DeploySpec extends ZIOSpecDefault:
 
+  private def deploy(deployer: Deployer[Any], org: Org, repo: Repo, maybeVersion: Option[MavenCentral.Version] = None): ZIO[Scope & Client, DeployError, DeployOutcome] =
+    defer:
+      val repoInfo = GitService.cloneAndScan(org, repo).run
+      val version = maybeVersion.getOrElse(repoInfo.version)
+      deployer.deployFrom(org, repo, version, repoInfo).run
+
   private def readJarEntries(jar: Chunk[Byte]): ZIO[Any, Throwable, Map[String, Chunk[Byte]]] =
     ZStream.fromChunk(jar)
       .via(ZipUnarchiver.unarchive)
@@ -48,7 +54,7 @@ object DeploySpec extends ZIOSpecDefault:
       test("nonexistent repo returns RepoNotFound"):
         defer:
           val deployer = ZIO.service[Deployer[Any]].run
-          val result = ZIO.scoped(deployer.deploy(Org("nonexistent-org-abc123"), Repo("nonexistent-repo"))).exit.run
+          val result = ZIO.scoped(deploy(deployer, Org("nonexistent-org-abc123"), Repo("nonexistent-repo"))).exit.run
           assertTrue(result match
             case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.RepoNotFound])
             case _ => false
@@ -60,7 +66,7 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deployer.deploy(Org("anthropics"), Repo("skills")).run
+            val outcome = deploy(deployer, Org("anthropics"), Repo("skills")).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
@@ -84,7 +90,7 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deployer.deploy(Org("anthropics"), Repo("skills")).run
+            val outcome = deploy(deployer, Org("anthropics"), Repo("skills")).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
 
@@ -100,7 +106,7 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deployer.deploy(Org("brunoborges"), Repo("jdb-agentic-debugger")).run
+            val outcome = deploy(deployer, Org("brunoborges"), Repo("jdb-agentic-debugger")).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
@@ -121,7 +127,7 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deployer.deploy(Org("jdubois"), Repo("dr-jskill")).run
+            val outcome = deploy(deployer, Org("jdubois"), Repo("dr-jskill")).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
@@ -143,7 +149,7 @@ object DeploySpec extends ZIOSpecDefault:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
             val existingVersion = MavenCentral.Version("2026_02_06-1ed29a0")
-            val outcome = deployer.deploy(Org("anthropics"), Repo("skills"), Some(existingVersion)).run
+            val outcome = deploy(deployer, Org("anthropics"), Repo("skills"), Some(existingVersion)).run
 
             assertTrue(
               outcome.duplicates.exists(_.artifactId.toString.contains("algorithmic-art")),

@@ -42,7 +42,7 @@ trait Deployer[Env]:
 
       (gav, pom, jar)
 
-  def deploy(org: Org, repo: Repo, maybeVersion: Option[MavenCentral.Version] = None): ZIO[Env & Scope & Client, DeployError, DeployOutcome] =
+  def deployFrom(org: Org, repo: Repo, version: MavenCentral.Version, repoInfo: GitService.RepoInfo): ZIO[Env & Scope & Client, DeployError, DeployOutcome] =
     def artifactBasePath(gav: MavenCentral.GroupArtifactVersion): String =
       val groupPath = gav.groupId.toString.replace('.', '/')
       s"$groupPath/${gav.artifactId}/${gav.version}/${gav.artifactId}-${gav.version}"
@@ -58,7 +58,7 @@ trait Deployer[Env]:
     def md5(data: Chunk[Byte]): Chunk[Byte] =
       hexDigest("MD5", data)
 
-    def skillFiles(gavsRef: Ref[Set[MavenCentral.GroupArtifactVersion]], version: MavenCentral.Version, repoInfo: GitService.RepoInfo)(location: SkillLocation, skillDir: File): ZIO[Scope, DeployError, Chunk[(String, Chunk[Byte])]] =
+    def skillFiles(gavsRef: Ref[Set[MavenCentral.GroupArtifactVersion]], repoInfo: GitService.RepoInfo)(location: SkillLocation, skillDir: File): ZIO[Scope, DeployError, Chunk[(String, Chunk[Byte])]] =
       defer:
         val skillFile = java.io.File(skillDir, "SKILL.md")
         val content = ZStream
@@ -118,9 +118,6 @@ trait Deployer[Env]:
         files
 
     defer:
-      val repoInfo = GitService.cloneAndScan(org, repo).run
-      val version = maybeVersion.getOrElse(repoInfo.version)
-
       // Check all skills for existing artifacts upfront
       val gavsByLocation = ZIO.foreach(repoInfo.skills): (location, _) =>
         artifactIdFor(location.org, location.repo, location.path)
@@ -141,7 +138,7 @@ trait Deployer[Env]:
         ZStream
           .fromIterable(skillsToProcess)
           .mapZIO: (location, skillDir) =>
-            skillFiles(gavsRef, version, repoInfo)(location, skillDir).catchSome:
+            skillFiles(gavsRef, repoInfo)(location, skillDir).catchSome:
               case DeployError.NoLicense(_, _, skillName) =>
                 val reason = "No license found. Add a LICENSE file or specify license in SKILL.md frontmatter."
                 skippedRef.update(_ :+ SkippedSkill(skillName, reason)).as(Chunk.empty)
@@ -156,7 +153,7 @@ trait Deployer[Env]:
       val skipped = skippedRef.get.run
 
       if published.nonEmpty then
-        val filename = s"$org-$repo-${repoInfo.version}.zip"
+        val filename = s"$org-$repo-${version}.zip"
         upload(filename, zipBytes).run
 
       DeployOutcome(published, skipped, duplicates)

@@ -9,4 +9,5 @@ object TestApp extends ZIOAppDefault:
       Client.default,
       MockDeployer.layerWithCheck,
       SkillsJarService.cacheLayer,
+      DeployJobs.live,
     )

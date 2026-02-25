@@ -114,6 +114,7 @@ object UI:
         `class` := "mt-4",
         action := "/deploy",
         method := "post",
+        Dom.attr("onsubmit", "var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Deploying...'"),
         div(
           `class` := "flex gap-2 items-end",
           div(
@@ -231,30 +232,32 @@ object UI:
         s""""$groupId" % "$artifactId" % "$version""""
 
   private def snippetScript(buildTool: BuildTool): Dom =
-    script.inlineJs(s"""
-      var buildTool = '${buildTool.param}';
-      function updateSnippet(sel, gid, aid) {
-        var v = sel.value;
-        var el = document.getElementById('snippet-' + aid);
-        if (!el) return;
-        if (buildTool === 'maven') {
-          el.textContent = '<dependency>\\n    <groupId>' + gid + '</groupId>\\n    <artifactId>' + aid + '</artifactId>\\n    <version>' + v + '</version>\\n</dependency>';
-        } else if (buildTool === 'gradle') {
-          el.textContent = "runtimeOnly(\\\"" + gid + ':' + aid + ':' + v + "\\\")";
-        } else {
-          el.textContent = '"' + gid + '" % "' + aid + '" % "' + v + '"';
-        }
-      }
-      function copySnippet(btn, aid) {
-        var el = document.getElementById('snippet-' + aid);
-        if (!el) return;
-        navigator.clipboard.writeText(el.textContent).then(function() {
-          var orig = btn.textContent;
-          btn.textContent = 'Copied!';
-          setTimeout(function() { btn.textContent = orig; }, 2000);
-        });
-      }
-    """)
+    script.inlineJs(
+      s"""
+         |var buildTool = '${buildTool.param}';
+         |function updateSnippet(sel, gid, aid) {
+         |  var v = sel.value;
+         |  var el = document.getElementById('snippet-' + aid);
+         |  if (!el) return;
+         |  if (buildTool === 'maven') {
+         |    el.textContent = '<dependency>\\n    <groupId>' + gid + '</groupId>\\n    <artifactId>' + aid + '</artifactId>\\n    <version>' + v + '</version>\\n</dependency>';
+         |  } else if (buildTool === 'gradle') {
+         |    el.textContent = "runtimeOnly(\\\"" + gid + ':' + aid + ':' + v + "\\\")";
+         |  } else {
+         |    el.textContent = '"' + gid + '" % "' + aid + '" % "' + v + '"';
+         |  }
+         |}
+         |function copySnippet(btn, aid) {
+         |  var el = document.getElementById('snippet-' + aid);
+         |  if (!el) return;
+         |  navigator.clipboard.writeText(el.textContent).then(function() {
+         |    var orig = btn.textContent;
+         |    btn.textContent = 'Copied!';
+         |    setTimeout(function() { btn.textContent = orig; }, 2000);
+         |  });
+         |}
+      """.stripMargin
+    )
 
   def docs(tailwind: URL): Dom =
     page(
@@ -280,35 +283,43 @@ object UI:
             "Most AI code assistants expect Agent Skills as files on the filesystem. The SkillsJars build plugins extract skills from your project dependencies into a directory your assistant can read.",
           ),
 
-          // Step 1
-          p(`class` := "font-semibold text-gray-800 mb-2", "1. Add SkillsJar dependencies"),
-          p(`class` := "text-gray-700 mb-4",
-            "Browse Agent Skills on ",
-            a(href := "/", `class` := "text-blue-600 hover:underline", "SkillsJars.com"),
-            " and add them to your project using the dependency snippet for your build tool.",
-          ),
-
-          // Step 2 - Gradle
-          p(`class` := "font-semibold text-gray-800 mb-2", "2. Add the extraction plugin"),
+          // Step 1 - Build Plugins
+          p(`class` := "font-semibold text-gray-800 mb-2", "1. Add the extraction plugin"),
 
           p(`class` := "text-gray-700 mt-4 mb-1", "Gradle:"),
           pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
-            """plugins {
-    id("com.skillsjars.gradle-plugin") version "0.0.2"
-}""",
+            """|plugins {
+               |    id("com.skillsjars.gradle-plugin") version "0.0.2"
+               |}""".stripMargin,
           ),
 
           p(`class` := "text-gray-700 mb-1", "Maven:"),
           pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
-            """<build>
-    <plugins>
-        <plugin>
-            <groupId>com.skillsjars</groupId>
-            <artifactId>maven-plugin</artifactId>
-            <version>0.0.2</version>
-        </plugin>
-    </plugins>
-</build>""",
+            """|<build>
+               |    <plugins>
+               |        <plugin>
+               |            <groupId>com.skillsjars</groupId>
+               |            <artifactId>maven-plugin</artifactId>
+               |            <version>0.0.3</version>
+               |            <dependencies>
+               |                <!-- Your SkillsJars -->
+               |                <dependency>
+               |                    <groupId>com.skillsjars</groupId>
+               |                    <artifactId>SKILLJAR_ARTIFACT_ID</artifactId>
+               |                    <version>SKILLJAR_VERSION</version>
+               |                </dependency>
+               |            </dependencies>
+               |        </plugin>
+               |    </plugins>
+               |</build>""".stripMargin,
+          ),
+
+          // Step 2 - Add SkillsJar dependencies
+          p(`class` := "font-semibold text-gray-800 mb-2", "2. Add SkillsJar dependencies"),
+          p(`class` := "text-gray-700 mb-4",
+            "Browse Agent Skills on ",
+            a(href := "/", `class` := "text-blue-600 hover:underline", "SkillsJars.com"),
+            " and add them to your project using the dependency snippet for your build tool.",
           ),
 
           // Step 3
@@ -352,18 +363,18 @@ object UI:
             p(`class` := "font-semibold text-gray-800 mt-4 mb-2", "1. Add dependencies"),
             p(`class` := "text-gray-700 mb-1", "Add the Spring AI Agent Utils library and any SkillsJar dependencies to your project:"),
             pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
-              """<dependency>
-    <groupId>org.springaicommunity</groupId>
-    <artifactId>spring-ai-agent-utils</artifactId>
-    <version>0.5.0</version>
-</dependency>
-
-<!-- SkillsJar dependencies, for example -->
-<dependency>
-    <groupId>com.skillsjars</groupId>
-    <artifactId>browser-use__browser-use__browser-use</artifactId>
-    <version>2026_02_23-1d154e1</version>
-</dependency>""",
+              """|<dependency>
+                 |    <groupId>org.springaicommunity</groupId>
+                 |    <artifactId>spring-ai-agent-utils</artifactId>
+                 |    <version>0.5.0</version>
+                 |</dependency>
+                 |
+                 |<!-- SkillsJar dependencies, for example -->
+                 |<dependency>
+                 |    <groupId>com.skillsjars</groupId>
+                 |    <artifactId>browser-use__browser-use__browser-use</artifactId>
+                 |    <version>2026_02_23-1d154e1</version>
+                 |</dependency>""".stripMargin,
             ),
 
             p(`class` := "font-semibold text-gray-800 mb-2", "2. Configure the skills path"),
@@ -377,13 +388,13 @@ object UI:
             p(`class` := "font-semibold text-gray-800 mb-2", "3. Wire up the SkillsTool"),
             p(`class` := "text-gray-700 mb-1", "Use the SkillsTool builder to load skills and add them to your ChatClient:"),
             pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
-              """@Value("${agent.skills.paths}") List<Resource> skillPaths;
-
-ChatClient chatClient = chatClientBuilder
-        .defaultToolCallbacks(
-                SkillsTool.builder().addSkillsResources(skillPaths).build()
-        )
-        .build();""",
+              """|@Value("${agent.skills.paths}") List<Resource> skillPaths;
+                 |
+                 |ChatClient chatClient = chatClientBuilder
+                 |        .defaultToolCallbacks(
+                 |                SkillsTool.builder().addSkillsResources(skillPaths).build()
+                 |        )
+                 |        .build();""".stripMargin,
             ),
 
             div(
@@ -418,6 +429,24 @@ ChatClient chatClient = chatClientBuilder
       currentPath = "/docs",
     )
 
+  def deployInProgress(org: String, repo: String, tailwind: URL): Dom =
+    page(
+      "Deploying...",
+      div(
+        `class` := "flex flex-col items-center justify-center py-16",
+        style("""
+          @keyframes spin { to { transform: rotate(360deg); } }
+        """),
+        div(
+          Dom.attr("style", "width:48px;height:48px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:spin 1s linear infinite"),
+        ),
+        p(`class` := "mt-6 text-lg font-semibold text-gray-700", s"Deploying $org/$repo..."),
+        p(`class` := "mt-2 text-sm text-gray-500", "This page will refresh automatically."),
+        meta(Dom.attr("http-equiv", "refresh"), Dom.attr("content", "3")),
+      ),
+      tailwind,
+    )
+
   def deployResult(results: Seq[DeployResult], tailwind: URL): Dom =
     page(
       "Deploy Results",
@@ -433,17 +462,17 @@ ChatClient chatClient = chatClientBuilder
 
   private def deployResultCard(result: DeployResult): Dom =
     result match
-      case DeployResult.Success(groupId, artifactId, version) =>
+      case DeployResult.Success(gav) =>
         div(
           `class` := "bg-green-50 border border-green-200 rounded-lg p-4",
           p(`class` := "font-semibold text-green-800", "Deployed successfully. It will take ~1hr for the artifact to be available on Maven Central."),
-          p(`class` := "text-sm font-mono text-green-700 mt-1", s"$groupId:$artifactId:$version"),
+          p(`class` := "text-sm font-mono text-green-700 mt-1", s"${gav.groupId}:${gav.artifactId}:${gav.version}"),
         )
-      case DeployResult.Skipped(skillName, reason) =>
+      case DeployResult.Skipped(skill) =>
         div(
           `class` := "bg-amber-50 border border-amber-200 rounded-lg p-4",
-          p(`class` := "font-semibold text-amber-800", s"Skipped: $skillName"),
-          p(`class` := "text-sm text-amber-700 mt-1", reason),
+          p(`class` := "font-semibold text-amber-800", s"Skipped: ${skill.skillName}"),
+          p(`class` := "text-sm text-amber-700 mt-1", skill.reason),
         )
       case DeployResult.Failure(error) =>
         val message = error match
@@ -467,8 +496,3 @@ ChatClient chatClient = chatClientBuilder
           p(`class` := "font-semibold text-red-800", "Deploy failed"),
           p(`class` := "text-sm text-red-700 mt-1", message),
         )
-
-enum DeployResult:
-  case Success(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version)
-  case Skipped(skillName: SkillName, reason: String)
-  case Failure(error: DeployError)

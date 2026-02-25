@@ -13,24 +13,38 @@ object App extends ZIOAppDefault:
       Response.html(UI.index(skillsJars, maybeQuery, buildTool, tailwind))
 
 
-  private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[Deployer[A] & A & Client, DeployError, Response] =
+  private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[DeployJobs & Deployer[A] & A & Client, DeployError, Response] =
     defer:
-      val deployer = ZIO.service[Deployer[A]].run
+      val deployJobs = ZIO.service[DeployJobs].run
       val form = request.body.asURLEncodedForm.mapError(e => DeployError.PublishFailed(e.getMessage)).run
       val org = ZIO.fromOption(form.get("org").flatMap(_.stringValue).map(Org(_)))
         .orElseFail(DeployError.PublishFailed("Missing org parameter")).run
       val repo = ZIO.fromOption(form.get("repo").flatMap(_.stringValue).map(Repo(_)))
         .orElseFail(DeployError.PublishFailed("Missing repo parameter")).run
-      val outcome = ZIO.scoped(deployer.deploy(org, repo)).run
-      val successes = outcome.published.toSeq.map: gav =>
-        DeployResult.Success(gav.groupId, gav.artifactId, gav.version)
-      val skipped = outcome.skipped.map: s =>
-        DeployResult.Skipped(s.skillName, s.reason)
-      val duplicates = outcome.duplicates.toSeq.map: gav =>
-        DeployResult.Failure(DeployError.DuplicateVersion(gav.groupId, gav.artifactId, gav.version))
-      Response.html(UI.deployResult(successes ++ skipped ++ duplicates, tailwind))
+      val version = deployJobs.start[A](org, repo).run
+      // If the job already completed, render results directly instead of redirecting to the spinner
+      deployJobs.get(org, repo, version).run match
+        case Some(DeployJobStatus.Done(results)) =>
+          Response.html(UI.deployResult(results, tailwind))
+        case Some(DeployJobStatus.Failed(error)) =>
+          Response.html(UI.deployResult(Seq(DeployResult.Failure(error)), tailwind))
+        case _ =>
+          Response.seeOther(zio.http.URL.decode(s"/deploy/$org/$repo/$version").toOption.get)
 
-  def appRoutes[A : Tag](webJars: WebJars): Routes[Deployer[A] & A & SkillsJarCache & Client, Nothing] =
+  private def deployStatusHandler(org: String, repo: String, version: String, tailwind: URL): ZIO[DeployJobs, Nothing, Response] =
+    defer:
+      val deployJobs = ZIO.service[DeployJobs].run
+      deployJobs.get(Org(org), Repo(repo), MavenCentral.Version(version)).run match
+        case Some(DeployJobStatus.Running) =>
+          Response.html(UI.deployInProgress(org, repo, tailwind))
+        case Some(DeployJobStatus.Done(results)) =>
+          Response.html(UI.deployResult(results, tailwind))
+        case Some(DeployJobStatus.Failed(error)) =>
+          Response.html(UI.deployResult(Seq(DeployResult.Failure(error)), tailwind))
+        case None =>
+          Response.html(UI.deployResult(Seq(DeployResult.Failure(DeployError.PublishFailed("Unknown deploy job"))), tailwind))
+
+  def appRoutes[A : Tag](webJars: WebJars): Routes[DeployJobs & Deployer[A] & A & SkillsJarCache & Client, Nothing] =
     val tailwind = webJars.url("tailwindcss__browser", "/dist/index.global.js")
 
     Routes(
@@ -45,6 +59,9 @@ object App extends ZIOAppDefault:
       Method.POST / "deploy" -> Handler.fromFunctionZIO[Request]: request =>
         deployHandler[A](request, tailwind).catchAll: error =>
           ZIO.succeed(Response.html(UI.deployResult(Seq(DeployResult.Failure(error)), tailwind)))
+      ,
+      Method.GET / "deploy" / string("org") / string("repo") / string("version") -> handler: (org: String, repo: String, version: String, _: Request) =>
+        deployStatusHandler(org, repo, version, tailwind)
       ,
     ) ++ webJars.routes
 
@@ -64,4 +81,5 @@ object App extends ZIOAppDefault:
       MavenCentral.Deploy.Sonatype.Live,
       Deployer.live,
       SkillsJarService.cacheLayer,
+      DeployJobs.live,
     )
