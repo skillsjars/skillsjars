@@ -39,7 +39,7 @@ object SecurityScannerIntegrationSpec extends ZIOSpecDefault:
       ZIO.scoped(SecurityScanner.scan(dir))
         .map(findings => assertTrue(findings.values.flatten.exists(f => f.severity == Severity.Critical || f.severity == Severity.High)))
         .ensuring(ZIO.succeed(deleteRecursive(dir)))
-    .provide(HerokuInference.live.orDie, Client.default) @@ TestAspect.withLiveSystem
+    .provide(HerokuInference.live.orDie, Client.default)
     ,
     test("clean skill passes real LLM scan"):
       val clean =
