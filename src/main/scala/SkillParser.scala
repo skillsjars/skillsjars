@@ -1,10 +1,8 @@
 import Models.*
+import org.virtuslab.yaml.*
+import org.virtuslab.yaml.Node.*
 import zio.*
 import zio.direct.*
-
-import org.yaml.snakeyaml.Yaml
-import java.util.{Map as JMap}
-import scala.jdk.CollectionConverters.*
 
 object SkillParser:
 
@@ -15,30 +13,36 @@ object SkillParser:
     lines match
       case head :: tail if head.trim == frontmatterDelimiter =>
         val endIdx = tail.indexWhere(_.trim == frontmatterDelimiter)
-        if endIdx >= 0 then Some(tail.take(endIdx).mkString("\n"))
-        else None
+        Option.when(endIdx >= 0)(tail.take(endIdx).mkString("\n"))
       case _ => None
 
-  private def extractSpdxIds(licenseValue: Any): List[String] =
-    licenseValue match
-      case s: String => List(s)
-      case jl: java.util.List[?] => jl.asScala.toList.collect { case s: String => s }
-      case _ => Nil
+  private def fail(reason: String) = SkillError.InvalidSkillMd(reason)
 
-  def parse(path: String, content: String): IO[DeployError, SkillMeta] =
+  private def requireScalar(mappings: Map[Node, Node], field: String): IO[SkillError, String] =
+    ZIO.fromOption:
+      mappings.collectFirst:
+        case (ScalarNode(key, _), ScalarNode(value, _)) if key == field => value
+    .orElseFail(fail(s"Missing required field: $field"))
+
+  def parse(content: String): IO[SkillError, SkillMeta] =
     defer:
       val yamlStr = ZIO.fromOption(extractFrontmatter(content))
-        .orElseFail(DeployError.InvalidSkillMd(path, "No YAML frontmatter found")).run
-      val parsed = ZIO.attempt(Yaml().load[JMap[String, Any]](yamlStr))
-        .mapError(e => DeployError.InvalidSkillMd(path, s"Invalid YAML: ${e.getMessage}")).run
-      val map = ZIO.fromOption(Option(parsed).map(_.asScala.toMap))
-        .orElseFail(DeployError.InvalidSkillMd(path, "Empty YAML frontmatter")).run
-      val name = ZIO.fromOption(map.get("name").collect { case s: String => s })
-        .orElseFail(DeployError.InvalidSkillMd(path, "Missing required field: name")).run
-      val description = ZIO.fromOption(map.get("description").collect { case s: String => s })
-        .orElseFail(DeployError.InvalidSkillMd(path, "Missing required field: description")).run
-      val spdxIds = map.get("license").map(extractSpdxIds).getOrElse(Nil)
-      val licenses = spdxIds.flatMap(Models.licenseFromSpdxId)
-      val rawLicense = map.get("license").collect { case s: String => s }
+        .orElseFail(fail("No YAML frontmatter found")).run
+      val node = ZIO.fromEither(yamlStr.asNode)
+        .mapError(e => fail(s"Invalid YAML: ${e.msg}")).run
+      val mappings = node match
+        case MappingNode(m, _) => ZIO.succeed(m).run
+        case _                 => ZIO.fail(fail("YAML frontmatter must be a mapping")).run
 
+      val name = requireScalar(mappings, "name").run
+      val description = requireScalar(mappings, "description").run
+
+      val licenseNode = mappings.collectFirst:
+        case (ScalarNode(key, _), value) if key == "license" => value
+      val (spdxIds, rawLicense) = licenseNode match
+        case Some(ScalarNode(id, _))       => (List(id), Some(id))
+        case Some(SequenceNode(nodes, _))  => (nodes.toList.collect { case ScalarNode(v, _) => v }, None)
+        case _                             => (Nil, None)
+
+      val licenses = spdxIds.flatMap(Models.licenseFromSpdxId)
       SkillMeta(SkillName(name), description, licenses, rawLicense)

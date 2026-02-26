@@ -10,11 +10,11 @@ import zio.stream.*
 
 object DeploySpec extends ZIOSpecDefault:
 
-  private def deploy(deployer: Deployer[Any], org: Org, repo: Repo, maybeVersion: Option[MavenCentral.Version] = None): ZIO[Scope & Client, DeployError, DeployOutcome] =
+  private def deploy(deployer: Deployer[Any], org: Org, repo: Repo): ZIO[Scope & Client, DeployError, Map[SkillName, SkillResult]] =
     defer:
       val repoInfo = GitService.cloneAndScan(org, repo).run
-      val version = maybeVersion.getOrElse(repoInfo.version)
-      deployer.deployFrom(org, repo, version, repoInfo).run
+      val version = repoInfo.version
+      deployer.deployFrom(org, repo, version, repoInfo).mapError(e => DeployError(org, repo, RepoErrorKind.NotFound)).run
 
   private def readJarEntries(jar: Chunk[Byte]): ZIO[Any, Throwable, Map[String, Chunk[Byte]]] =
     ZStream.fromChunk(jar)
@@ -28,7 +28,7 @@ object DeploySpec extends ZIOSpecDefault:
   def spec = suite("DeploySpec")(
     suite("PomGenerator")(
       test("includes required fields"):
-        val pom = PomGenerator.generate(
+        val pomBytes = PomGenerator.generate(
           MavenCentral.GroupId("com.skillsjars"),
           MavenCentral.ArtifactId("myorg__myrepo__my-skill"),
           MavenCentral.Version("2026_02_13-abc1234"),
@@ -37,17 +37,45 @@ object DeploySpec extends ZIOSpecDefault:
           NonEmptyChunk(License("MIT License", "https://opensource.org/licenses/MIT")),
           Org("myorg"),
           Repo("myrepo"),
-        ).asString
+        )
+        val pom = scala.xml.XML.loadString(pomBytes.asString)
+        val gid = (pom \ "groupId").text
+        val aid = (pom \ "artifactId").text
+        val ver = (pom \ "version").text
+        val pomName = (pom \ "name").text
+        val desc = (pom \ "description").text
+        val licName = (pom \ "licenses" \ "license" \ "name").text
+        val licUrl = (pom \ "licenses" \ "license" \ "url").text
+        val scmUrl = (pom \ "scm" \ "url").text
 
         assertTrue(
-          pom.contains("<groupId>com.skillsjars</groupId>"),
-          pom.contains("<artifactId>myorg__myrepo__my-skill</artifactId>"),
-          pom.contains("<version>2026_02_13-abc1234</version>"),
-          pom.contains("<name>My Skill</name>"),
-          pom.contains("<description>A great skill</description>"),
-          pom.contains("<name>MIT License</name>"),
-          pom.contains("<url>https://opensource.org/licenses/MIT</url>"),
-          pom.contains("https://github.com/myorg/myrepo"),
+          gid == "com.skillsjars",
+          aid == "myorg__myrepo__my-skill",
+          ver == "2026_02_13-abc1234",
+          pomName == "My Skill",
+          desc == "A great skill",
+          licName == "MIT License",
+          licUrl == "https://opensource.org/licenses/MIT",
+          scmUrl == "https://github.com/myorg/myrepo",
+        )
+      ,
+      test("escapes XML special characters in description"):
+        val description = "Developer and Non-Developer tracks, plus on-demand Q&A. That's <great> for \"everyone\""
+        val pomBytes = PomGenerator.generate(
+          MavenCentral.GroupId("com.skillsjars"),
+          MavenCentral.ArtifactId("github__awesome-copilot__copilot-cli-quickstart"),
+          MavenCentral.Version("2026_02_25-8cf8dd6"),
+          SkillName("copilot-cli-quickstart"),
+          description,
+          NonEmptyChunk(License("MIT License", "https://opensource.org/licenses/MIT")),
+          Org("github"),
+          Repo("awesome-copilot"),
+        )
+        val pom = scala.xml.XML.loadString(pomBytes.asString)
+        val desc = (pom \ "description").text
+
+        assertTrue(
+          desc == description,
         )
     ),
     suite("deploy integration")(
@@ -56,7 +84,7 @@ object DeploySpec extends ZIOSpecDefault:
           val deployer = ZIO.service[Deployer[Any]].run
           val result = ZIO.scoped(deploy(deployer, Org("nonexistent-org-abc123"), Repo("nonexistent-repo"))).exit.run
           assertTrue(result match
-            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.RepoNotFound])
+            case Exit.Failure(c) => c.failureOption.exists { case DeployError(_, _, RepoErrorKind.NotFound) => true; case _ => false }
             case _ => false
           )
       .provide(MockDeployer.layer, Client.default)
@@ -66,19 +94,23 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deploy(deployer, Org("anthropics"), Repo("skills")).run
+            val repoInfo = GitService.cloneAndScan(Org("anthropics"), Repo("skills")).run
+            val version = repoInfo.version
+            val results = deployer.deployFrom(Org("anthropics"), Repo("skills"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
 
-            val canvasGav = outcome.published.find(_.artifactId.toString.contains("canvas-design")).get
+            val published = results.collect { case (name, SkillResult.Success(_)) => name }.toSet
+            val skipped = results.collect { case (name, SkillResult.Skipped(_)) => name }
+            val canvasAid = artifactIdFor(Org("anthropics"), Repo("skills"), List("canvas-design")).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val canvasGav = MavenCentral.GroupArtifactVersion(Models.groupId, canvasAid, version)
             val skillsJar = readJarEntries(files.find(_._1.endsWith(".jar")).get._2).run
 
             assertTrue(
-              outcome.published.nonEmpty,
-              outcome.published.forall(_.groupId.toString == "com.skillsjars"),
-              outcome.skipped.exists(_.skillName == SkillName("doc-coauthoring")),
-              files.size == outcome.published.size * 6, // pom, jar, pom.md5, jar.md5, pom.sha1, jar.sha1
+              published.nonEmpty,
+              skipped.exists(_ == SkillName("doc-coauthoring")),
+              files.size == published.size * 6, // pom, jar, pom.md5, jar.md5, pom.sha1, jar.sha1
               files.keys.count(_.startsWith(s"com/skillsjars/${canvasGav.artifactId}/")) == 6,
               files.contains(s"com/skillsjars/${canvasGav.artifactId}/${canvasGav.version}/${canvasGav.artifactId}-${canvasGav.version}.jar"),
               skillsJar.keys.exists(_.endsWith("SKILL.md")),
@@ -90,14 +122,17 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deploy(deployer, Org("anthropics"), Repo("skills")).run
+            val repoInfo = GitService.cloneAndScan(Org("anthropics"), Repo("skills")).run
+            val version = repoInfo.version
+            val results = deployer.deployFrom(Org("anthropics"), Repo("skills"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
 
             val files = readJarEntries(mockDeployer.upload.get._2).run.keys
+            val published = results.collect { case (_, SkillResult.Success(_)) => () }
 
             assertTrue(
-              outcome.published.nonEmpty,
+              published.nonEmpty,
               files.exists(_.endsWith(".asc"))
             )
       .provide(MockDeployer.layer, Client.default) @@ TestAspect.withLiveSystem @@ TestAspect.ifEnvSet("OSS_GPG_KEY")
@@ -106,20 +141,27 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deploy(deployer, Org("brunoborges"), Repo("jdb-agentic-debugger")).run
+            val repoInfo = GitService.cloneAndScan(Org("brunoborges"), Repo("jdb-agentic-debugger")).run
+            val version = repoInfo.version
+            val results = deployer.deployFrom(Org("brunoborges"), Repo("jdb-agentic-debugger"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
 
-            val gav = outcome.published.find(_.artifactId.toString.contains("jdb-debugger")).get
-            val pomBytes = files(s"com/skillsjars/${gav.artifactId}/${gav.version}/${gav.artifactId}-${gav.version}.pom")
-            val pom = ZIO.succeed(pomBytes.asString).run
+            val published = results.collect { case (name, SkillResult.Success(_)) => name }.toSet
+            val skipped = results.collect { case (_, SkillResult.Skipped(_)) => () }
+            val aid = artifactIdFor(Org("brunoborges"), Repo("jdb-agentic-debugger"), List("jdb-debugger")).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val gavForSkill = MavenCentral.GroupArtifactVersion(Models.groupId, aid, version)
+            val pomBytes = files(s"com/skillsjars/${gavForSkill.artifactId}/${gavForSkill.version}/${gavForSkill.artifactId}-${gavForSkill.version}.pom")
+            val pom = scala.xml.XML.loadString(pomBytes.asString)
+            val licName = (pom \ "licenses" \ "license" \ "name").text
+            val licUrl = (pom \ "licenses" \ "license" \ "url").text
 
             assertTrue(
-              outcome.published.size == 1,
-              outcome.skipped.isEmpty,
-              pom.contains("<name>MIT License</name>"),
-              pom.contains("<url>https://opensource.org/licenses/MIT</url>"),
+              published.size == 1,
+              skipped.isEmpty,
+              licName == "MIT License",
+              licUrl == "https://opensource.org/licenses/MIT",
             )
       .provide(MockDeployer.layer, Client.default)
       ,
@@ -127,17 +169,21 @@ object DeploySpec extends ZIOSpecDefault:
         ZIO.scoped:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
-            val outcome = deploy(deployer, Org("jdubois"), Repo("dr-jskill")).run
+            val repoInfo = GitService.cloneAndScan(Org("jdubois"), Repo("dr-jskill")).run
+            val version = repoInfo.version
+            val results = deployer.deployFrom(Org("jdubois"), Repo("dr-jskill"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
 
-            val gav = outcome.published.find(_.artifactId.toString == "jdubois__dr-jskill").get
+            val published = results.collect { case (name, SkillResult.Success(_)) => name }.toSet
+            val aid = artifactIdFor(Org("jdubois"), Repo("dr-jskill")).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val skillGav = MavenCentral.GroupArtifactVersion(Models.groupId, aid, version)
             val skillsJar = readJarEntries(files.find(_._1.endsWith(".jar")).get._2).run
 
             assertTrue(
-              outcome.published.size == 1,
-              gav.artifactId.toString == "jdubois__dr-jskill",
+              published.size == 1,
+              skillGav.artifactId.toString == "jdubois__dr-jskill",
               skillsJar.keys.exists(_.endsWith("SKILL.md")),
               skillsJar.keys.exists(_.startsWith("META-INF/skills/jdubois/dr-jskill/")),
               !skillsJar.keys.exists(_.contains(".git")),
@@ -149,12 +195,25 @@ object DeploySpec extends ZIOSpecDefault:
           defer:
             val deployer = ZIO.service[Deployer[Any]].run
             val existingVersion = MavenCentral.Version("2026_02_06-1ed29a0")
-            val outcome = deploy(deployer, Org("anthropics"), Repo("skills"), Some(existingVersion)).run
+            val repoInfo = GitService.cloneAndScan(Org("anthropics"), Repo("skills")).run
+            val result = deployer.deployFrom(Org("anthropics"), Repo("skills"), existingVersion, repoInfo).exit.run
 
-            assertTrue(
-              outcome.duplicates.exists(_.artifactId.toString.contains("algorithmic-art")),
-              outcome.published.isEmpty,
-            )
+            result match
+              case Exit.Failure(cause) =>
+                cause.failureOption match
+                  case Some(DeployJobError.NoPublishableSkills(skipped)) =>
+                    val duplicates = skipped.collect { case (name, SkillError.DuplicateVersion(_)) => name }
+                    assertTrue(
+                      duplicates.exists(_ == SkillName("algorithmic-art")),
+                      duplicates.nonEmpty,
+                    )
+                  case other => assertTrue(false)
+              case Exit.Success(results) =>
+                val duplicates = results.collect { case (name, SkillResult.Skipped(SkillError.DuplicateVersion(_))) => name }
+                assertTrue(
+                  duplicates.exists(_ == SkillName("algorithmic-art")),
+                  duplicates.nonEmpty,
+                )
       .provide(MockDeployer.layerWithCheck, Client.default)
     ),
     suite("artifactIdFor")(
@@ -202,7 +261,7 @@ object DeploySpec extends ZIOSpecDefault:
         defer:
           val result = artifactIdFor(Org("my__org"), Repo("myrepo"), List("myskill")).exit.run
           assertTrue(result match
-            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case Exit.Failure(c) => c.failureOption.exists { case SkillError.InvalidComponent(_, _) => true; case _ => false }
             case _ => false
           )
       ,
@@ -210,7 +269,7 @@ object DeploySpec extends ZIOSpecDefault:
         defer:
           val result = artifactIdFor(Org("myorg"), Repo("my__repo"), List("myskill")).exit.run
           assertTrue(result match
-            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case Exit.Failure(c) => c.failureOption.exists { case SkillError.InvalidComponent(_, _) => true; case _ => false }
             case _ => false
           )
       ,
@@ -218,7 +277,7 @@ object DeploySpec extends ZIOSpecDefault:
         defer:
           val result = artifactIdFor(Org("myorg"), Repo("myrepo"), List("my__skill")).exit.run
           assertTrue(result match
-            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.InvalidComponent])
+            case Exit.Failure(c) => c.failureOption.exists { case SkillError.InvalidComponent(_, _) => true; case _ => false }
             case _ => false
           )
       ,
@@ -245,7 +304,7 @@ object DeploySpec extends ZIOSpecDefault:
           )
           val result = GitService.validateNoOverlaps(org, repo, skills).exit.run
           assertTrue(result match
-            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.OverlappingSkills])
+            case Exit.Failure(c) => c.failureOption.exists { case DeployError(_, _, RepoErrorKind.OverlappingSkills(_, _)) => true; case _ => false }
             case _ => false
           )
       ,
@@ -259,7 +318,7 @@ object DeploySpec extends ZIOSpecDefault:
           )
           val result = GitService.validateNoOverlaps(org, repo, skills).exit.run
           assertTrue(result match
-            case Exit.Failure(c) => c.failureOption.exists(_.isInstanceOf[DeployError.OverlappingSkills])
+            case Exit.Failure(c) => c.failureOption.exists { case DeployError(_, _, RepoErrorKind.OverlappingSkills(_, _)) => true; case _ => false }
             case _ => false
           )
       ,

@@ -4,7 +4,8 @@ import zio.*
 import zio.direct.*
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.revwalk.RevWalk
-import org.yaml.snakeyaml.Yaml
+import org.virtuslab.yaml.*
+import org.virtuslab.yaml.Node.*
 
 import java.io.File
 import java.net.URI
@@ -12,8 +13,6 @@ import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.nio.file.{Files, Path}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneOffset}
-import java.util.{Map as JMap}
-import scala.jdk.CollectionConverters.*
 
 object GitService:
 
@@ -38,7 +37,7 @@ object GitService:
           .setDirectory(tmpDir.toFile)
           .setDepth(1)
           .call()
-      .orElseFail(DeployError.RepoNotFound(org, repo)).run
+      .orElseFail(DeployError(org, repo, RepoErrorKind.NotFound)).run
 
       val version = extractVersion(git).run
 
@@ -46,7 +45,7 @@ object GitService:
       val scanRoot = if skillsDir.isDirectory then skillsDir else tmpDir.toFile
       val skillLocations = findSkills(scanRoot, org, repo)
 
-      ZIO.fail(DeployError.NoSkillsDirectory(org, repo)).when(skillLocations.isEmpty).run
+      ZIO.fail(DeployError(org, repo, RepoErrorKind.NoSkillsDirectory)).when(skillLocations.isEmpty).run
       validateNoOverlaps(org, repo, skillLocations).run
 
       val licenses =
@@ -75,7 +74,7 @@ object GitService:
     paths.combinations(2).collectFirst:
       case List(a, b) if a.startsWith(b) || b.startsWith(a) => (a, b)
     match
-      case Some((a, b)) => ZIO.fail(DeployError.OverlappingSkills(org, repo, a, b))
+      case Some((a, b)) => ZIO.fail(DeployError(org, repo, RepoErrorKind.OverlappingSkills(a, b)))
       case None => ZIO.unit
 
   private def findSkills(repoDir: File, org: Org, repo: Repo): List[(SkillLocation, File)] =
@@ -118,15 +117,14 @@ object GitService:
         .build()
       val response = client.send(request, HttpResponse.BodyHandlers.ofString())
       if response.statusCode() == 200 then
-        val yaml = Yaml()
-        val parsed = yaml.load[JMap[String, Any]](response.body())
-        Option(parsed)
-          .flatMap(m => Option(m.get("license")))
-          .collect { case m: JMap[?, ?] => m }
-          .flatMap(m => Option(m.get("spdx_id")))
-          .collect { case s: String if s != "NOASSERTION" => s }
-          .flatMap(Models.licenseFromSpdxId)
-          .toList
+        response.body().asNode.toOption.toList.flatMap:
+          case MappingNode(m, _) =>
+            m.collectFirst:
+              case (ScalarNode("license", _), MappingNode(licenseMap, _)) =>
+                licenseMap.collectFirst:
+                  case (ScalarNode("spdx_id", _), ScalarNode(id, _)) if id != "NOASSERTION" => id
+            .flatten.flatMap(Models.licenseFromSpdxId).toList
+          case _ => Nil
       else Nil
     catch
       case _: Exception => Nil

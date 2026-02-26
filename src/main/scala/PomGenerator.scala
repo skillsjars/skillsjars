@@ -4,7 +4,6 @@ import zio.*
 
 object PomGenerator:
 
-  // todo: maybe use scala xml?
   def generate(
     groupId: MavenCentral.GroupId,
     artifactId: MavenCentral.ArtifactId,
@@ -15,42 +14,43 @@ object PomGenerator:
     org: Org,
     repo: Repo,
   ): Chunk[Byte] =
-    val licenseXml =
-      val entries = licenses.map: license =>
-        s"""    <license>
-           |      <name>${license.name}</name>
-           |      <url>${license.url}</url>
-           |      <distribution>repo</distribution>
-           |    </license>""".stripMargin
-      s"  <licenses>\n${entries.mkString("\n")}\n  </licenses>"
-
     val scmUrl = s"https://github.com/$org/$repo"
 
-    val pom = s"""<?xml version="1.0" encoding="UTF-8"?>
-       |<project xmlns="http://maven.apache.org/POM/4.0.0"
-       |         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-       |         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-       |  <modelVersion>4.0.0</modelVersion>
-       |  <packaging>jar</packaging>
-       |  <groupId>$groupId</groupId>
-       |  <artifactId>$artifactId</artifactId>
-       |  <version>$version</version>
-       |  <name>$name</name>
-       |  <description>$description</description>
-       |  <url>https://skillsjars.com</url>
-       |  <scm>
-       |    <url>$scmUrl</url>
-       |    <connection>scm:git:$scmUrl.git</connection>
-       |  </scm>
-       |$licenseXml
-       |  <developers>
-       |    <developer>
-       |      <id>skillsjars</id>
-       |      <name>SkillsJars</name>
-       |      <url>https://skillsjars.com</url>
-       |    </developer>
-       |  </developers>
-       |</project>
-       |""".stripMargin
+    val pom =
+      <project xmlns="http://maven.apache.org/POM/4.0.0"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+        <modelVersion>4.0.0</modelVersion>
+        <packaging>jar</packaging>
+        <groupId>{groupId}</groupId>
+        <artifactId>{artifactId}</artifactId>
+        <version>{version}</version>
+        <name>{name}</name>
+        <description>{description}</description>
+        <url>https://skillsjars.com</url>
+        <scm>
+          <url>{scmUrl}</url>
+          <connection>scm:git:{scmUrl}.git</connection>
+        </scm>
+        <licenses>
+          {licenses.toList.map: license =>
+            <license>
+              <name>{license.name}</name>
+              <url>{license.url}</url>
+              <distribution>repo</distribution>
+            </license>
+          }
+        </licenses>
+        <developers>
+          <developer>
+            <id>skillsjars</id>
+            <name>SkillsJars</name>
+            <url>https://skillsjars.com</url>
+          </developer>
+        </developers>
+      </project>
 
-    Chunk.fromArray(pom.getBytes)
+    // todo: probably a better way to create the Chunk
+    val writer = new java.io.StringWriter()
+    scala.xml.XML.write(writer, pom, "UTF-8", xmlDecl = true, doctype = null)
+    Chunk.fromArray(writer.toString.getBytes("UTF-8"))

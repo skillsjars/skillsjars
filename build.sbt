@@ -34,7 +34,8 @@ libraryDependencies ++= Seq(
 
   "org.eclipse.jgit" % "org.eclipse.jgit" % "7.5.0.202512021534-r",
 
-  "org.yaml" % "snakeyaml" % "2.5",
+  "org.scala-lang.modules" %% "scala-xml" % "2.4.0",
+  "org.virtuslab" %% "scala-yaml" % "0.3.1",
 
   "org.bouncycastle" % "bcpg-jdk18on" % "1.83",
 

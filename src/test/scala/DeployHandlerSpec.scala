@@ -20,10 +20,8 @@ object DeployHandlerSpec extends ZIOSpecDefault:
           !bodyString.contains("Missing org parameter"),
           !bodyString.contains("Missing repo parameter"),
         )
-    .provide(MockDeployer.layer, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live)
+    .provide(MockDeployer.layer, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer)
     ,
-    // todo: this test assumes the artifact has been deployed already which wouldn't be the case if there is a new upstream commit
-    //       so we should make this more stable with a hidden version param or something
     test("deploy of existing artifacts shows duplicate versions"):
       val body = Body.fromURLEncodedForm(Form(FormField.textField("org", "anthropics"), FormField.textField("repo", "skills")))
       val request = Request.post(URL.decode("/deploy").toOption.get, body)
@@ -38,8 +36,8 @@ object DeployHandlerSpec extends ZIOSpecDefault:
         ).run
 
         assertTrue(
-          bodyString.contains("Duplicate version"),
+          bodyString.contains("Already published"),
           bodyString.contains("algorithmic-art"),
         )
-    .provide(MockDeployer.layerWithCheck, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live)
+    .provide(MockDeployer.layerWithCheck, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer)
   ) @@ TestAspect.withLiveClock

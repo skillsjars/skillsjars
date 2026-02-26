@@ -10,4 +10,5 @@ object TestApp extends ZIOAppDefault:
       MockDeployer.layerWithCheck,
       SkillsJarService.cacheLayer,
       DeployJobs.live,
+      HerokuInference.live.orElse(HerokuInferenceFake.layer),
     )

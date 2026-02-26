@@ -17,7 +17,7 @@ object SkillParserSpec extends ZIOSpecDefault:
             |# My Skill
             |Some content here
             |""".stripMargin
-        val meta = SkillParser.parse("skills/my-skill/SKILL.md", content).run
+        val meta = SkillParser.parse(content).run
         assertTrue(
           meta.name == SkillName("my-skill"),
           meta.description == "A useful skill",
@@ -33,7 +33,7 @@ object SkillParserSpec extends ZIOSpecDefault:
             |---
             |# Content
             |""".stripMargin
-        val meta = SkillParser.parse("skills/another-skill/SKILL.md", content).run
+        val meta = SkillParser.parse(content).run
         assertTrue(
           meta.name == SkillName("another-skill"),
           meta.description == "Another skill",
@@ -43,7 +43,7 @@ object SkillParserSpec extends ZIOSpecDefault:
     test("fails when no frontmatter"):
       defer:
         val content = "# Just markdown\nNo frontmatter here"
-        val result = SkillParser.parse("SKILL.md", content).exit.run
+        val result = SkillParser.parse(content).exit.run
         assertTrue(result.isFailure)
     ,
     test("fails when missing name"):
@@ -53,11 +53,11 @@ object SkillParserSpec extends ZIOSpecDefault:
             |description: A skill without a name
             |---
             |""".stripMargin
-        val result = SkillParser.parse("SKILL.md", content).exit.run
+        val result = SkillParser.parse(content).exit.run
         assertTrue(result match
           case Exit.Failure(cause) =>
             cause.failureOption.exists:
-              case DeployError.InvalidSkillMd(_, reason) => reason.contains("name")
+              case SkillError.InvalidSkillMd(reason) => reason.contains("name")
               case _ => false
           case _ => false
         )
@@ -69,11 +69,11 @@ object SkillParserSpec extends ZIOSpecDefault:
             |name: my-skill
             |---
             |""".stripMargin
-        val result = SkillParser.parse("SKILL.md", content).exit.run
+        val result = SkillParser.parse(content).exit.run
         assertTrue(result match
           case Exit.Failure(cause) =>
             cause.failureOption.exists:
-              case DeployError.InvalidSkillMd(_, reason) => reason.contains("description")
+              case SkillError.InvalidSkillMd(reason) => reason.contains("description")
               case _ => false
           case _ => false
         )
@@ -88,7 +88,7 @@ object SkillParserSpec extends ZIOSpecDefault:
             |---
             |# Content
             |""".stripMargin
-        val meta = SkillParser.parse("SKILL.md", content).run
+        val meta = SkillParser.parse(content).run
         assertTrue(
           meta.licenses == List(
             License("MIT License", "https://opensource.org/licenses/MIT"),
@@ -105,7 +105,7 @@ object SkillParserSpec extends ZIOSpecDefault:
             |license: UNKNOWN-LICENSE
             |---
             |""".stripMargin
-        val meta = SkillParser.parse("SKILL.md", content).run
+        val meta = SkillParser.parse(content).run
         assertTrue(meta.licenses.isEmpty)
     ,
     test("fails with invalid YAML"):
@@ -115,7 +115,7 @@ object SkillParserSpec extends ZIOSpecDefault:
             |name: [invalid yaml
             |---
             |""".stripMargin
-        val result = SkillParser.parse("SKILL.md", content).exit.run
+        val result = SkillParser.parse(content).exit.run
         assertTrue(result.isFailure)
     ,
   )

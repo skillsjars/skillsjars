@@ -3,6 +3,7 @@ import com.jamesward.zio_mavencentral.MavenCentral
 import zio.http.URL
 import zio.http.template2.*
 
+
 import java.net.URLEncoder
 
 object UI:
@@ -63,6 +64,7 @@ object UI:
         buildToolSelector(buildTool, maybeQuery),
         skillsJarList(skillsJars, buildTool),
         snippetScript(buildTool),
+        script.inlineJs("window.addEventListener('pageshow',function(e){if(e.persisted){var b=document.querySelector('form[action=\"/deploy\"] button[type=submit]');if(b){b.disabled=false;b.textContent='Deploy'}}})"),
       ),
       tailwind
     )
@@ -447,52 +449,129 @@ object UI:
       tailwind,
     )
 
-  def deployResult(results: Seq[DeployResult], tailwind: URL): Dom =
+  def deployDone(results: Map[SkillName, SkillResult], tailwind: URL): Dom =
     page(
       "Deploy Results",
       div(
         a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
         div(
+          `class` := "bg-green-50 border border-green-200 rounded-lg p-4 mt-4",
+          p(`class` := "font-semibold text-green-800", "Deployed successfully. It will take ~1hr for the artifact to be available on Maven Central."),
+        ),
+        div(
           `class` := "space-y-3 mt-4",
-          results.map(deployResultCard),
+          results.toSeq.map((name, result) => skillResultCard(name, result)),
         ),
       ),
       tailwind,
     )
 
-  private def deployResultCard(result: DeployResult): Dom =
+  private def skillResultCard(name: SkillName, result: SkillResult): Dom =
     result match
-      case DeployResult.Success(gav) =>
+      case SkillResult.Success(gav) =>
         div(
           `class` := "bg-green-50 border border-green-200 rounded-lg p-4",
-          p(`class` := "font-semibold text-green-800", "Deployed successfully. It will take ~1hr for the artifact to be available on Maven Central."),
+          p(`class` := "font-semibold text-green-800", s"$name"),
           p(`class` := "text-sm font-mono text-green-700 mt-1", s"${gav.groupId}:${gav.artifactId}:${gav.version}"),
         )
-      case DeployResult.Skipped(skill) =>
-        div(
-          `class` := "bg-amber-50 border border-amber-200 rounded-lg p-4",
-          p(`class` := "font-semibold text-amber-800", s"Skipped: ${skill.skillName}"),
-          p(`class` := "text-sm text-amber-700 mt-1", skill.reason),
-        )
-      case DeployResult.Failure(error) =>
-        val message = error match
-          case DeployError.RepoNotFound(org, repo) => s"Repository not found: $org/$repo"
-          case DeployError.NoSkillsDirectory(org, repo) => s"No skills directory in $org/$repo"
-          case DeployError.InvalidSkillMd(path, reason) => s"Invalid SKILL.md at $path: $reason"
-          case DeployError.InvalidComponent(component, reason) => s"Invalid component '$component': $reason"
-          case DeployError.DuplicateVersion(gid, aid, v) => s"Duplicate version: $gid:$aid:$v"
-          case DeployError.NoLicense(org, repo, skillName) => s"No license found for skill '$skillName' in $org/$repo. Add a LICENSE file or specify license in SKILL.md frontmatter."
-          case DeployError.OverlappingSkills(org, repo, path1, path2) =>
-            val p1 = if path1.isEmpty then "/" else path1.mkString("/")
-            val p2 = if path2.isEmpty then "/" else path2.mkString("/")
-            s"Overlapping skills in $org/$repo: '$p1' and '$p2'. A skill directory cannot be an ancestor of another."
-          case DeployError.NoPublishableSkills(org, repo, skipped) =>
-            val reasons = skipped.map(s => s"${s.skillName}: ${s.reason}").mkString("; ")
-            s"No skills could be published from $org/$repo. $reasons"
-          case DeployError.PublishFailed(reason) => s"Publish failed: $reason"
+      case SkillResult.Skipped(error) =>
+        error match
+          case SkillError.SecurityBlocked(findings) =>
+            div(
+              `class` := "bg-red-50 border border-red-200 rounded-lg p-4",
+              p(`class` := "font-semibold text-red-800", s"Security blocked: $name"),
+              div(
+                `class` := "mt-2 space-y-2",
+                findings.toSeq.collect { case (fileName, fileFindings) if fileFindings.nonEmpty => (fileName, fileFindings) }.map: (fileName, fileFindings) =>
+                  div(
+                    p(`class` := "text-red-400 text-xs font-mono", fileName),
+                    div(
+                      `class` := "space-y-1 ml-2",
+                      fileFindings.map: finding =>
+                        val severityCls = finding.severity match
+                          case Severity.Critical => "bg-red-600 text-white"
+                          case Severity.High     => "bg-orange-500 text-white"
+                          case Severity.Medium   => "bg-yellow-400 text-gray-900"
+                          case Severity.Low      => "bg-gray-300 text-gray-700"
+                        div(
+                          `class` := "flex items-start gap-2 text-sm",
+                          span(`class` := s"px-1.5 py-0.5 rounded text-xs font-medium $severityCls", finding.severity.toString),
+                          span(`class` := "text-red-700", finding.description),
+                        ),
+                    ),
+                  ),
+              ),
+            )
+          case _ =>
+            val message = skillErrorMessage(error)
+            div(
+              `class` := "bg-amber-50 border border-amber-200 rounded-lg p-4",
+              p(`class` := "font-semibold text-amber-800", s"Skipped: $name"),
+              p(`class` := "text-sm text-amber-700 mt-1", message),
+            )
 
+  private def skillErrorMessage(error: SkillError): String =
+    error match
+      case SkillError.InvalidSkillMd(reason) => s"Invalid SKILL.md: $reason"
+      case SkillError.InvalidComponent(component, reason) => s"Invalid component '$component': $reason"
+      case SkillError.DuplicateVersion(gav) => s"Already published: ${gav.groupId}:${gav.artifactId}:${gav.version}"
+      case SkillError.NoLicense => "No license found. Add a LICENSE file or specify license in SKILL.md frontmatter."
+      case SkillError.ScanInferenceError(_) => "Security scan is temporarily unavailable. Please try again later."
+      case SkillError.ScanParseError(_) => "Security scan returned an unexpected response. Please try again later."
+      case SkillError.SecurityBlocked(findings) => s"Security blocked: ${findings.values.map(_.size).sum} finding(s)"
+
+  def deployError(error: DeployError, tailwind: URL): Dom =
+    val message = error.kind match
+      case RepoErrorKind.NotFound => s"Repository not found: ${error.org}/${error.repo}"
+      case RepoErrorKind.NoSkillsDirectory => s"No skills directory in ${error.org}/${error.repo}"
+      case RepoErrorKind.OverlappingSkills(path1, path2) =>
+        val p1 = if path1.isEmpty then "/" else path1.mkString("/")
+        val p2 = if path2.isEmpty then "/" else path2.mkString("/")
+        s"Overlapping skills in ${error.org}/${error.repo}: '$p1' and '$p2'. A skill directory cannot be an ancestor of another."
+
+    page(
+      "Deploy Error",
+      div(
+        a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
         div(
-          `class` := "bg-red-50 border border-red-200 rounded-lg p-4",
+          `class` := "bg-red-50 border border-red-200 rounded-lg p-4 mt-4",
           p(`class` := "font-semibold text-red-800", "Deploy failed"),
           p(`class` := "text-sm text-red-700 mt-1", message),
-        )
+        ),
+      ),
+      tailwind,
+    )
+
+  def deployJobError(error: DeployJobError, tailwind: URL): Dom =
+    val message = error match
+      case DeployJobError.NoPublishableSkills(skipped) =>
+        val reasons = skipped.map((name, error) => s"$name: ${skillErrorMessage(error)}").mkString("; ")
+        s"No skills could be published. $reasons"
+      case DeployJobError.PublishFailed(reason) => s"Publish failed: $reason"
+
+    page(
+      "Deploy Error",
+      div(
+        a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
+        div(
+          `class` := "bg-red-50 border border-red-200 rounded-lg p-4 mt-4",
+          p(`class` := "font-semibold text-red-800", "Deploy failed"),
+          p(`class` := "text-sm text-red-700 mt-1", message),
+        ),
+      ),
+      tailwind,
+    )
+
+  def formError(reason: String, tailwind: URL): Dom =
+    page(
+      "Deploy Error",
+      div(
+        a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
+        div(
+          `class` := "bg-red-50 border border-red-200 rounded-lg p-4 mt-4",
+          p(`class` := "font-semibold text-red-800", "Invalid request"),
+          p(`class` := "text-sm text-red-700 mt-1", reason),
+        ),
+      ),
+      tailwind,
+    )

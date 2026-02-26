@@ -1,5 +1,7 @@
 import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
+import zio.schema.*
+import zio.schema.annotation.*
 
 object Models:
 
@@ -41,29 +43,49 @@ object Models:
 
   case class SkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, versions: Seq[MavenCentral.Version], name: String, description: String)
 
-  case class SkippedSkill(skillName: SkillName, reason: String)
+  enum Severity derives Schema:
+    case Critical, High, Medium, Low
 
-  case class DeployOutcome(published: Set[MavenCentral.GroupArtifactVersion], skipped: List[SkippedSkill], duplicates: Set[MavenCentral.GroupArtifactVersion] = Set.empty):
-    def toResults: Seq[DeployResult] =
-      published.toSeq.map(DeployResult.Success(_)) ++
-        skipped.map(DeployResult.Skipped(_)) ++
-        duplicates.toSeq.map(gav => DeployResult.Failure(DeployError.DuplicateVersion(gav.groupId, gav.artifactId, gav.version)))
+  enum ScanCategory derives Schema:
+    @caseName("PROMPT_INJECTION") case PromptInjection
+    @caseName("SEMANTIC_MISMATCH") case SemanticMismatch
+    @caseName("INTENT_CLASSIFICATION") case IntentClassification
+    @caseName("SUBTLE_INJECTION") case SubtleInjection
+    @caseName("CROSS_SKILL_POISONING") case CrossSkillPoisoning
 
-  enum DeployResult:
-    case Success(gav: MavenCentral.GroupArtifactVersion)
-    case Skipped(skill: SkippedSkill)
-    case Failure(error: DeployError)
+  case class SecurityFinding(category: ScanCategory, severity: Severity, description: String) derives Schema
 
-  enum DeployError:
-    case RepoNotFound(org: Org, repo: Repo)
-    case NoSkillsDirectory(org: Org, repo: Repo)
-    case InvalidSkillMd(path: String, reason: String)
-    case InvalidComponent(component: String, reason: String)
-    case DuplicateVersion(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version)
-    case NoLicense(org: Org, repo: Repo, skillName: SkillName)
-    case OverlappingSkills(org: Org, repo: Repo, path1: List[String], path2: List[String])
-    case NoPublishableSkills(org: Org, repo: Repo, skipped: List[SkippedSkill])
+  case class DeployError(org: Org, repo: Repo, kind: RepoErrorKind)
+
+  // these are errors that can happen before the DeployJob is created
+  enum RepoErrorKind:
+    case NotFound
+    case NoSkillsDirectory
+    case OverlappingSkills(path1: List[String], path2: List[String])
+
+  // these are errors that can happen after the DeployJob is created
+  enum DeployJobError:
+    case NoPublishableSkills(results: Map[SkillName, SkillError])
     case PublishFailed(reason: String)
+
+  enum SkillResult:
+    case Success(gav: MavenCentral.GroupArtifactVersion)
+    case Skipped(reason: SkillError)
+
+  enum SkillError:
+    case InvalidSkillMd(reason: String)
+    case InvalidComponent(component: String, reason: String)
+    case DuplicateVersion(gav: MavenCentral.GroupArtifactVersion)
+    case NoLicense
+    case ScanInferenceError(reason: String)
+    case ScanParseError(reason: String)
+    case SecurityBlocked(findings: Map[String, List[SecurityFinding]])
+
+  enum DeployJobStatus:
+    case Running
+    case Done(results: Map[SkillName, SkillResult])
+    case Failed(error: DeployJobError)
+
 
   enum BuildTool(val label: String, val param: String):
     case Maven extends BuildTool("Maven", "maven")
@@ -74,28 +96,29 @@ object Models:
     def fromParam(s: String): BuildTool = s.toLowerCase match
       case "gradle" => BuildTool.Gradle
       case "sbt" => BuildTool.Sbt
-      case _ => BuildTool.Maven
+      case "maven" => BuildTool.Maven
+      case _ => throw new IllegalArgumentException(s"Invalid build tool: $s")
 
   given CanEqual[Org, Org] = CanEqual.derived
   given CanEqual[Repo, Repo] = CanEqual.derived
   given CanEqual[SkillName, SkillName] = CanEqual.derived
   given CanEqual[License, License] = CanEqual.derived
   given CanEqual[DeployError, DeployError] = CanEqual.derived
+  given CanEqual[RepoErrorKind, RepoErrorKind] = CanEqual.derived
   given CanEqual[BuildTool, BuildTool] = CanEqual.derived
   given CanEqual[DeployJobStatus, DeployJobStatus] = CanEqual.derived
-
-  enum DeployJobStatus:
-    case Running
-    case Done(results: Seq[DeployResult])
-    case Failed(error: DeployError)
+  given CanEqual[Severity, Severity] = CanEqual.derived
+  given CanEqual[ScanCategory, ScanCategory] = CanEqual.derived
+  given CanEqual[SkillResult, SkillResult] = CanEqual.derived
+  given CanEqual[SkillError, SkillError] = CanEqual.derived
 
   private def sanitize(s: String): String =
     s.toLowerCase.replaceAll("[^a-z0-9_-]", "").replaceAll("^[-_]+|[-_]+$", "")
 
   val groupId: MavenCentral.GroupId = MavenCentral.GroupId("com.skillsjars")
 
-  def artifactIdFor(org: Org, repo: Repo, path: List[String] = List.empty): IO[DeployError, MavenCentral.ArtifactId] =
+  def artifactIdFor(org: Org, repo: Repo, path: List[String] = List.empty): IO[SkillError.InvalidComponent, MavenCentral.ArtifactId] =
     val components = List(org: String, repo: String) ++ path
     components.find(_.contains("__")) match
-      case Some(c) => ZIO.fail(DeployError.InvalidComponent(c, "contains '__'"))
+      case Some(c) => ZIO.fail(SkillError.InvalidComponent(c, "contains '__'"))
       case None => ZIO.succeed(MavenCentral.ArtifactId(components.map(sanitize).mkString("__")))

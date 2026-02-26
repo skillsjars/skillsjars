@@ -17,32 +17,15 @@ import java.util.Base64
 
 trait Deployer[Env]:
 
-  def upload(filename: String, bytes: Chunk[Byte]): ZIO[Env, DeployError, Unit]
+  def upload(filename: String, bytes: Chunk[Byte]): ZIO[Env, DeployJobError, Unit]
 
-  def ascSign(toSign: Chunk[Byte]): IO[DeployError, Option[Chunk[Byte]]]
+  def ascSign(toSign: Chunk[Byte]): IO[DeployJobError, Option[Chunk[Byte]]]
 
-  protected def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[Client & Scope, DeployError, Boolean] =
+  def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[Client & Scope, Nothing, Boolean] =
     MavenCentral.artifactExists(groupId, artifactId, version)
       .catchAll(_ => ZIO.succeed(false))
 
-  def skillsJar(version: MavenCentral.Version, licenses: NonEmptyChunk[License])(skillLocation: SkillLocation, skillDir: File): ZIO[Any, DeployError, (MavenCentral.GroupArtifactVersion, Chunk[Byte], Chunk[Byte])] =
-    defer:
-      ZIO.debug(skillLocation -> skillDir).run
-      val content = ZStream.fromPath(java.io.File(skillDir, "SKILL.md").toPath)
-        .runCollect
-        .mapBoth(e => DeployError.PublishFailed(s"Failed to read SKILL.md: ${e.getMessage}"), chunk => String(chunk.toArray, "UTF-8"))
-        .run
-      val meta = SkillParser.parse(java.io.File(skillDir, "SKILL.md").getPath, content).run
-      val groupId = Models.groupId
-      val artifactId = artifactIdFor(skillLocation.org, skillLocation.repo, skillLocation.path).run
-      val gav = MavenCentral.GroupArtifactVersion(groupId, artifactId, version)
-
-      val pom = PomGenerator.generate(groupId, artifactId, version, meta.name, meta.description, licenses, skillLocation.org, skillLocation.repo)
-      val jar = JarCreator.create(skillDir, skillLocation.org, skillLocation.repo, skillLocation.path, pom, groupId, artifactId, version).run
-
-      (gav, pom, jar)
-
-  def deployFrom(org: Org, repo: Repo, version: MavenCentral.Version, repoInfo: GitService.RepoInfo): ZIO[Env & Scope & Client, DeployError, DeployOutcome] =
+  def deployFrom(org: Org, repo: Repo, version: MavenCentral.Version, repoInfo: GitService.RepoInfo): ZIO[Env & Scope & Client, DeployJobError, Map[SkillName, SkillResult]] =
     def artifactBasePath(gav: MavenCentral.GroupArtifactVersion): String =
       val groupPath = gav.groupId.toString.replace('.', '/')
       s"$groupPath/${gav.artifactId}/${gav.version}/${gav.artifactId}-${gav.version}"
@@ -52,28 +35,28 @@ trait Deployer[Env]:
       val hex = digest.iterator.map(b => f"$b%02x").mkString
       Chunk.fromArray(hex.getBytes(StandardCharsets.UTF_8))
 
-    def sha1(data: Chunk[Byte]): Chunk[Byte] =
-      hexDigest("SHA-1", data)
+    def sha1(data: Chunk[Byte]): Chunk[Byte] = hexDigest("SHA-1", data)
+    def md5(data: Chunk[Byte]): Chunk[Byte] = hexDigest("MD5", data)
 
-    def md5(data: Chunk[Byte]): Chunk[Byte] =
-      hexDigest("MD5", data)
-
-    def skillFiles(gavsRef: Ref[Set[MavenCentral.GroupArtifactVersion]], repoInfo: GitService.RepoInfo)(location: SkillLocation, skillDir: File): ZIO[Scope, DeployError, Chunk[(String, Chunk[Byte])]] =
+    def processSkill(location: SkillLocation, skillDir: File): ZIO[Client & Scope, SkillError, (MavenCentral.GroupArtifactVersion, Chunk[Byte], Chunk[Byte])] =
       defer:
         val skillFile = java.io.File(skillDir, "SKILL.md")
         val content = ZStream
           .fromPath(skillFile.toPath)
           .runCollect
           .mapBoth(
-            e => DeployError.PublishFailed(s"Failed to read SKILL.md: ${e.getMessage}"),
+            e => SkillError.InvalidSkillMd(s"Failed to read SKILL.md: ${e.getMessage}"),
             chunk => String(chunk.toArray, StandardCharsets.UTF_8),
           )
           .run
 
-        val meta = SkillParser.parse(skillFile.getPath, content).run
+        val meta = SkillParser.parse(content).run
         val groupId = Models.groupId
         val artifactId = artifactIdFor(location.org, location.repo, location.path).run
         val gav = MavenCentral.GroupArtifactVersion(groupId, artifactId, version)
+
+        val exists = checkArtifactExists(gav.groupId, gav.artifactId, gav.version).run
+        ZIO.fail(SkillError.DuplicateVersion(gav)).when(exists).run
 
         val skillDirLicenses = GitService.detectLicenses(skillDir)
         val skillLevelLicenses = meta.licenses ++ skillDirLicenses
@@ -81,7 +64,6 @@ trait Deployer[Env]:
           if skillLevelLicenses.nonEmpty then skillLevelLicenses
           else if repoInfo.licenses.nonEmpty then repoInfo.licenses
           else
-            // Fallback: check for a LICENSE file with non-SPDX content
             val repoUrl = s"https://github.com/$org/$repo"
             GitService.findLicenseFile(skillDir) match
               case Some(fileName) =>
@@ -92,71 +74,65 @@ trait Deployer[Env]:
                   List(License(licenseName, s"$repoUrl/blob/main/${location.path.mkString("/")}/$fileName"))
               case None => Nil
         val licenses = ZIO.fromOption(NonEmptyChunk.fromIterableOption(resolvedList))
-          .orElseFail(DeployError.NoLicense(org, repo, location.skillName)).run
+          .orElseFail(SkillError.NoLicense).run
         val pom = PomGenerator.generate(groupId, artifactId, version, meta.name, meta.description, licenses, org, repo)
-        val jar = JarCreator.create(skillDir, org, repo, location.path, pom, groupId, artifactId, version).run
+        val jar = JarCreator.create(skillDir, org, repo, location.path, pom, groupId, artifactId, version)
+          .mapError(e => SkillError.InvalidSkillMd(s"JAR creation failed: ${e.getMessage}")).run
 
-        val maybePomAsc = ascSign(pom).run
-        val maybeJarAsc = ascSign(jar).run
-
-        gavsRef.update(_ + gav).run
-
-        val base = artifactBasePath(gav)
-
-        val files: Chunk[(String, Chunk[Byte])] =
-          Chunk(
-            s"$base.pom" -> pom,
-            s"$base.pom.sha1" -> sha1(pom),
-            s"$base.pom.md5" -> md5(pom),
-            s"$base.jar" -> jar,
-            s"$base.jar.sha1" -> sha1(jar),
-            s"$base.jar.md5" -> md5(jar),
-          ) ++
-            maybePomAsc.map(asc => Chunk(s"$base.pom.asc" -> asc)).getOrElse(Chunk.empty) ++
-            maybeJarAsc.map(asc => Chunk(s"$base.jar.asc" -> asc)).getOrElse(Chunk.empty)
-
-        files
+        (gav, pom, jar)
 
     defer:
-      // Check all skills for existing artifacts upfront
-      val gavsByLocation = ZIO.foreach(repoInfo.skills): (location, _) =>
-        artifactIdFor(location.org, location.repo, location.path)
-          .map(aid => location -> MavenCentral.GroupArtifactVersion(Models.groupId, aid, version))
-      .run
-
-      val duplicates = ZIO.filter(gavsByLocation): (_, gav) =>
-        checkArtifactExists(gav.groupId, gav.artifactId, gav.version)
-      .run.map(_._2).toSet
-
-      val duplicateLocations = gavsByLocation.filter((_, gav) => duplicates.contains(gav)).map(_._1).toSet
-      val skillsToProcess = repoInfo.skills.filterNot((location, _) => duplicateLocations.contains(location))
-
-      val gavsRef = Ref.make(Set.empty[MavenCentral.GroupArtifactVersion]).run
-      val skippedRef = Ref.make(List.empty[SkippedSkill]).run
+      val resultsRef = Ref.make(Map.empty[SkillName, SkillResult]).run
 
       val zipBytes =
         ZStream
-          .fromIterable(skillsToProcess)
+          .fromIterable(repoInfo.skills)
           .mapZIO: (location, skillDir) =>
-            skillFiles(gavsRef, repoInfo)(location, skillDir).catchSome:
-              case DeployError.NoLicense(_, _, skillName) =>
-                val reason = "No license found. Add a LICENSE file or specify license in SKILL.md frontmatter."
-                skippedRef.update(_ :+ SkippedSkill(skillName, reason)).as(Chunk.empty)
+            processSkill(location, skillDir).foldZIO(
+              error =>
+                resultsRef.update(_ + (location.skillName -> SkillResult.Skipped(error))).as(Chunk.empty),
+              { case (gav, pom, jar) =>
+                defer:
+                  val maybePomAsc = ascSign(pom).run
+                  val maybeJarAsc = ascSign(jar).run
+
+                  resultsRef.update(_ + (location.skillName -> SkillResult.Success(gav))).run
+
+                  val base = artifactBasePath(gav)
+
+                  val files: Chunk[(String, Chunk[Byte])] =
+                    Chunk(
+                      s"$base.pom" -> pom,
+                      s"$base.pom.sha1" -> sha1(pom),
+                      s"$base.pom.md5" -> md5(pom),
+                      s"$base.jar" -> jar,
+                      s"$base.jar.sha1" -> sha1(jar),
+                      s"$base.jar.md5" -> md5(jar),
+                    ) ++
+                      maybePomAsc.map(asc => Chunk(s"$base.pom.asc" -> asc)).getOrElse(Chunk.empty) ++
+                      maybeJarAsc.map(asc => Chunk(s"$base.jar.asc" -> asc)).getOrElse(Chunk.empty)
+
+                  files
+              }
+            )
           .flatMap(ZStream.fromChunk)
           .map: (name, content) =>
             (ArchiveEntry(name = name), ZStream.fromChunk(content))
-          .via(ZipArchiver.archive.mapError(t => DeployError.PublishFailed(s"Failed to create ZIP: ${t.getMessage}")))
+          .via(ZipArchiver.archive.mapError(t => DeployJobError.PublishFailed(s"Failed to create ZIP: ${t.getMessage}")))
           .runCollect
           .run
 
-      val published = gavsRef.get.run
-      val skipped = skippedRef.get.run
+      val results = resultsRef.get.run
 
-      if published.nonEmpty then
-        val filename = s"$org-$repo-${version}.zip"
-        upload(filename, zipBytes).run
+      val hasPublished = results.values.exists { case SkillResult.Success(_) => true; case _ => false }
+      if !hasPublished then
+        val skipped = results.collect { case (name, SkillResult.Skipped(error)) => name -> error }
+        ZIO.fail(DeployJobError.NoPublishableSkills(skipped)).run
 
-      DeployOutcome(published, skipped, duplicates)
+      val filename = s"$org-$repo-${version}.zip"
+      upload(filename, zipBytes).run
+
+      results
 
 
 class LiveDeployer(
@@ -165,18 +141,19 @@ class LiveDeployer(
   sonatype: MavenCentral.Deploy.Sonatype,
 ) extends Deployer[Sonatype]:
 
-  override def upload(filename: String, bytes: Chunk[Byte]): ZIO[Sonatype, DeployError, Unit] =
+  override def upload(filename: String, bytes: Chunk[Byte]): ZIO[Sonatype, DeployJobError, Unit] =
     MavenCentral.Deploy.uploadVerifyAndPublish(filename, bytes.toArray)
-      .mapError(e => DeployError.PublishFailed(e.getMessage))
+      .mapError(e => DeployJobError.PublishFailed(e.getMessage))
 
-  override def ascSign(toSign: Chunk[Byte]): IO[DeployError, Option[Chunk[Byte]]] =
+  override def ascSign(toSign: Chunk[Byte]): IO[DeployJobError, Option[Chunk[Byte]]] =
     Deployer.ascSignWith(gpgKey, maybeGpgPass)(toSign).asSome
+      .mapError(e => DeployJobError.PublishFailed(s"Signing failed: ${e.getMessage}"))
 
 
 object Deployer:
 
-  private def signError(e: Throwable): DeployError =
-    DeployError.PublishFailed(s"Signing failed: ${e.getMessage}")
+  private def signError(e: Throwable): Throwable =
+    RuntimeException(s"Signing failed: ${e.getMessage}", e)
 
   private final class ChunkBuilderOutputStream(builder: ChunkBuilder[Byte]) extends java.io.OutputStream:
     override def write(b: Int): Unit =
@@ -189,7 +166,7 @@ object Deployer:
         builder += b(i)
         i += 1
 
-  def ascSignWith(gpgKey: String, gpgPass: Option[String])(toSign: Chunk[Byte]): IO[DeployError, Chunk[Byte]] =
+  def ascSignWith(gpgKey: String, gpgPass: Option[String])(toSign: Chunk[Byte]): IO[Throwable, Chunk[Byte]] =
     ZIO
       .attempt:
         val keyBytes = Base64.getDecoder.decode(gpgKey)
@@ -200,7 +177,6 @@ object Deployer:
         val sGen = PGPSignatureGenerator(signerBuilder, secretKeyRing.getPublicKey())
         sGen.init(PGPSignature.BINARY_DOCUMENT, privKey)
         sGen
-      .mapError(e => DeployError.PublishFailed(s"GPG initialization failed: ${e.getMessage}"))
       .flatMap: sGen =>
         ZIO.attempt:
           val builder = ChunkBuilder.make[Byte]()
@@ -221,4 +197,3 @@ object Deployer:
         val gpgPass = ZIO.systemWith(_.env("OSS_GPG_PASS")).orDie.run
         val sonatype = ZIO.service[MavenCentral.Deploy.Sonatype].run
         LiveDeployer(gpgKey, gpgPass, sonatype)
-

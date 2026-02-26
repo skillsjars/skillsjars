@@ -5,9 +5,13 @@ import zio.concurrent.ConcurrentMap
 import zio.direct.*
 import zio.http.Client
 
-class DeployJobs(jobs: ConcurrentMap[(Org, Repo, MavenCentral.Version), DeployJobStatus]):
+import java.io.File
 
-  def start[A: Tag](org: Org, repo: Repo): ZIO[Deployer[A] & A & Client, DeployError, MavenCentral.Version] =
+class DeployJobs(
+  jobs: ConcurrentMap[(Org, Repo, MavenCentral.Version), DeployJobStatus],
+):
+
+  def start[A: Tag](org: Org, repo: Repo): ZIO[Deployer[A] & A & Client & HerokuInference, DeployError, MavenCentral.Version] =
     defer:
       val versionPromise = Promise.make[DeployError, MavenCentral.Version].run
       cloneAndDeploy[A](org, repo, versionPromise).disconnect.forkDaemon.run
@@ -16,12 +20,13 @@ class DeployJobs(jobs: ConcurrentMap[(Org, Repo, MavenCentral.Version), DeployJo
   def get(org: Org, repo: Repo, version: MavenCentral.Version): UIO[Option[DeployJobStatus]] =
     jobs.get((org, repo, version))
 
-  private def cloneAndDeploy[A: Tag](org: Org, repo: Repo, versionPromise: Promise[DeployError, MavenCentral.Version]): ZIO[Deployer[A] & A & Client, Nothing, Unit] =
+  private def cloneAndDeploy[A: Tag](org: Org, repo: Repo, versionPromise: Promise[DeployError, MavenCentral.Version]): ZIO[Deployer[A] & A & Client & HerokuInference, Nothing, Unit] =
     ZIO.scoped:
       defer:
         val repoInfo = GitService.cloneAndScan(org, repo).tapError(e => versionPromise.fail(e)).run
         val version = repoInfo.version
         val key = (org, repo, version)
+
         versionPromise.succeed(version).run
         jobs.get(key).run match
           case Some(_) => ()
@@ -32,15 +37,36 @@ class DeployJobs(jobs: ConcurrentMap[(Org, Repo, MavenCentral.Version), DeployJo
     .catchAll: error =>
       versionPromise.fail(error).unit
 
-  private def runDeploy[A: Tag](key: (Org, Repo, MavenCentral.Version), org: Org, repo: Repo, version: MavenCentral.Version, repoInfo: GitService.RepoInfo): ZIO[Deployer[A] & A & Scope & Client, Nothing, Unit] =
+  private def passed(findings: Map[String, List[SecurityFinding]]): Boolean =
+    !findings.values.flatten.exists(f => f.severity == Severity.Critical || f.severity == Severity.High)
+
+  private def scanSkill(location: SkillLocation, skillDir: File): ZIO[HerokuInference & Client & Scope, Nothing, Option[(SkillName, SkillError)]] =
+    SecurityScanner.scan(skillDir).fold(
+      error => Some((location.skillName, error)),
+      findings =>
+        if passed(findings) then None
+        else Some((location.skillName, SkillError.SecurityBlocked(findings)))
+    )
+
+  private def runDeploy[A: Tag](key: (Org, Repo, MavenCentral.Version), org: Org, repo: Repo, version: MavenCentral.Version, repoInfo: GitService.RepoInfo): ZIO[Deployer[A] & A & Scope & Client & HerokuInference, Nothing, Unit] =
     defer:
       val deployer = ZIO.service[Deployer[A]].run
-      val outcome = deployer.deployFrom(org, repo, version, repoInfo).run
-      outcome
-    .foldZIO(
-      error   => jobs.put(key, DeployJobStatus.Failed(error)),
-      outcome => jobs.put(key, DeployJobStatus.Done(outcome.toResults))
-    ).unit
+
+      val scanResults = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+        scanSkill(location, skillDir)
+      .run
+
+      val blocked = scanResults.flatten.toMap
+      val passedSkills = repoInfo.skills.filterNot((location, _) => blocked.contains(location.skillName))
+
+      val done: ZIO[Deployer[A] & A & Scope & Client, DeployJobError, Unit] =
+        defer:
+          val deployResults = deployer.deployFrom(org, repo, version, repoInfo.copy(skills = passedSkills)).run
+          val allResults = blocked.map((name, error) => name -> SkillResult.Skipped(error)) ++ deployResults
+          jobs.put(key, DeployJobStatus.Done(allResults)).unit.run
+      done.run
+    .catchAll: (error: DeployJobError) =>
+      jobs.put(key, DeployJobStatus.Failed(error)).unit
 
 
 object DeployJobs:

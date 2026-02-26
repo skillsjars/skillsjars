@@ -6,7 +6,6 @@ import zio.stream.*
 
 import java.io.File
 import java.nio.file.Files
-//import scala.jdk.CollectionConverters.*
 
 object JarCreator:
 
@@ -19,7 +18,7 @@ object JarCreator:
     groupId: MavenCentral.GroupId,
     artifactId: MavenCentral.ArtifactId,
     version: MavenCentral.Version,
-  ): IO[DeployError, Chunk[Byte]] =
+  ): IO[Throwable, Chunk[Byte]] =
     val pathPart = if path.isEmpty then "" else path.mkString("", "/", "/")
     val resourcePrefix = s"META-INF/skills/$org/$repo/$pathPart"
     val mavenPrefix = s"META-INF/maven/$groupId/$artifactId/"
@@ -43,7 +42,6 @@ object JarCreator:
       (ArchiveEntry(name = name, isDirectory = true), ZStream.empty)
 
     val skillFileEntries = ZStream.fromJavaStream(Files.walk(skillDir.toPath))
-      .mapError(e => DeployError.PublishFailed(s"Failed to list skill files: ${e.getMessage}"))
       .filterZIO(path => ZIO.attempt(!Files.isSameFile(path, skillDir.toPath)).orDie)
       .filter: path =>
         val relative = skillDir.toPath.relativize(path).toString.replace('\\', '/')
@@ -55,10 +53,6 @@ object JarCreator:
             dirEntry(s"$resourcePrefix$relative/")
           else
             (ArchiveEntry(name = s"$resourcePrefix$relative"), ZStream.fromPath(path))
-        .mapError: (e: DeployError | Throwable) =>
-          e match
-            case de: DeployError => de
-            case t: Throwable => DeployError.PublishFailed(s"Failed to read skill file $path: ${t.getMessage}")
 
     def parentDirs(path: String): List[String] =
       val segments = path.stripSuffix("/").split('/').toList
@@ -77,7 +71,3 @@ object JarCreator:
     (dirEntries ++ staticEntries ++ skillFileEntries)
       .via(ZipArchiver.archive)
       .runCollect
-      .mapError: (e: DeployError | Throwable) =>
-        e match
-          case de: DeployError => de
-          case t: Throwable => DeployError.PublishFailed(s"JAR creation failed: ${t.getMessage}")
