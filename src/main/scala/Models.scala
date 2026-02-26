@@ -38,6 +38,14 @@ object Models:
 
   case class SkillMeta(name: SkillName, description: String, licenses: List[License], rawLicense: Option[String] = None)
 
+  case class ValidatedSkill(
+    location: SkillLocation,
+    skillDir: java.io.File,
+    meta: SkillMeta,
+    gav: MavenCentral.GroupArtifactVersion,
+    licenses: NonEmptyChunk[License],
+  )
+
   case class SkillLocation(org: Org, repo: Repo, path: List[String]):
     def skillName: SkillName = if path.isEmpty then repo else path.last
 

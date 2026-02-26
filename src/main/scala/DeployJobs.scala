@@ -52,19 +52,38 @@ class DeployJobs(
     defer:
       val deployer = ZIO.service[Deployer[A]].run
 
-      val scanResults = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
-        scanSkill(location, skillDir)
+      // Phase 1: Cheap validations (SKILL.md parsing, duplicate check, license)
+      val validationResults = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+        deployer.validateSkill(org, repo, version, location, skillDir, repoInfo.licenses)
+          .fold(
+            error => Left((location.skillName, error)),
+            validated => Right(validated),
+          )
       .run
 
-      val blocked = scanResults.flatten.toMap
-      val passedSkills = repoInfo.skills.filterNot((location, _) => blocked.contains(location.skillName))
+      val validated = validationResults.collect { case Right(v) => v }
+      val validationSkipped = validationResults.collect { case Left((n, e)) => n -> e }.toMap
 
-      val done: ZIO[Deployer[A] & A & Scope & Client, DeployJobError, Unit] =
-        defer:
-          val deployResults = deployer.deployFrom(org, repo, version, repoInfo.copy(skills = passedSkills)).run
-          val allResults = blocked.map((name, error) => name -> SkillResult.Skipped(error)) ++ deployResults
-          jobs.put(key, DeployJobStatus.Done(allResults)).unit.run
-      done.run
+      // Phase 2: Security scan only validated skills
+      val scanResults = ZIO.foreach(validated): skill =>
+        scanSkill(skill.location, skill.skillDir)
+      .run
+
+      val securityBlocked = scanResults.flatten.toMap
+      val passedSkills = validated.filterNot(v => securityBlocked.contains(v.location.skillName))
+      val allSkipped = validationSkipped ++ securityBlocked
+
+      if passedSkills.isEmpty then
+        // Phase 3: Early exit if nothing valid
+        jobs.put(key, DeployJobStatus.Failed(DeployJobError.NoPublishableSkills(allSkipped))).unit.run
+      else
+        // Phase 4: Build and deploy
+        val done: ZIO[Deployer[A] & A & Scope & Client, DeployJobError, Unit] =
+          defer:
+            val deployResults = deployer.deployValidated(org, repo, version, passedSkills).run
+            val allResults = allSkipped.map((name, error) => name -> SkillResult.Skipped(error)) ++ deployResults
+            jobs.put(key, DeployJobStatus.Done(allResults)).unit.run
+        done.run
     .catchAll: (error: DeployJobError) =>
       jobs.put(key, DeployJobStatus.Failed(error)).unit
 

@@ -25,7 +25,49 @@ trait Deployer[Env]:
     MavenCentral.artifactExists(groupId, artifactId, version)
       .catchAll(_ => ZIO.succeed(false))
 
-  def deployFrom(org: Org, repo: Repo, version: MavenCentral.Version, repoInfo: GitService.RepoInfo): ZIO[Env & Scope & Client, DeployJobError, Map[SkillName, SkillResult]] =
+  def validateSkill(org: Org, repo: Repo, version: MavenCentral.Version, location: SkillLocation,
+                    skillDir: File, repoLicenses: List[License]): ZIO[Client & Scope, SkillError, ValidatedSkill] =
+    defer:
+      val skillFile = java.io.File(skillDir, "SKILL.md")
+      val content = ZStream
+        .fromPath(skillFile.toPath)
+        .runCollect
+        .mapBoth(
+          e => SkillError.InvalidSkillMd(s"Failed to read SKILL.md: ${e.getMessage}"),
+          chunk => String(chunk.toArray, StandardCharsets.UTF_8),
+        )
+        .run
+
+      val meta = SkillParser.parse(content).run
+      val groupId = Models.groupId
+      val artifactId = artifactIdFor(location.org, location.repo, location.path).run
+      val gav = MavenCentral.GroupArtifactVersion(groupId, artifactId, version)
+
+      val exists = checkArtifactExists(gav.groupId, gav.artifactId, gav.version).run
+      ZIO.fail(SkillError.DuplicateVersion(gav)).when(exists).run
+
+      val skillDirLicenses = GitService.detectLicenses(skillDir)
+      val skillLevelLicenses = meta.licenses ++ skillDirLicenses
+      val resolvedList =
+        if skillLevelLicenses.nonEmpty then skillLevelLicenses
+        else if repoLicenses.nonEmpty then repoLicenses
+        else
+          val repoUrl = s"https://github.com/$org/$repo"
+          GitService.findLicenseFile(skillDir) match
+            case Some(fileName) =>
+              val licenseName = meta.rawLicense.getOrElse("See LICENSE file")
+              if location.path.isEmpty then
+                List(License(licenseName, s"$repoUrl/blob/main/$fileName"))
+              else
+                List(License(licenseName, s"$repoUrl/blob/main/${location.path.mkString("/")}/$fileName"))
+            case None => Nil
+      val licenses = ZIO.fromOption(NonEmptyChunk.fromIterableOption(resolvedList))
+        .orElseFail(SkillError.NoLicense).run
+
+      ValidatedSkill(location, skillDir, meta, gav, licenses)
+
+  def deployValidated(org: Org, repo: Repo, version: MavenCentral.Version,
+                      skills: List[ValidatedSkill]): ZIO[Env & Scope & Client, DeployJobError, Map[SkillName, SkillResult]] =
     def artifactBasePath(gav: MavenCentral.GroupArtifactVersion): String =
       val groupPath = gav.groupId.toString.replace('.', '/')
       s"$groupPath/${gav.artifactId}/${gav.version}/${gav.artifactId}-${gav.version}"
@@ -38,65 +80,32 @@ trait Deployer[Env]:
     def sha1(data: Chunk[Byte]): Chunk[Byte] = hexDigest("SHA-1", data)
     def md5(data: Chunk[Byte]): Chunk[Byte] = hexDigest("MD5", data)
 
-    def processSkill(location: SkillLocation, skillDir: File): ZIO[Client & Scope, SkillError, (MavenCentral.GroupArtifactVersion, Chunk[Byte], Chunk[Byte])] =
+    def buildArtifacts(validated: ValidatedSkill): ZIO[Client & Scope, SkillError, (MavenCentral.GroupArtifactVersion, Chunk[Byte], Chunk[Byte])] =
       defer:
-        val skillFile = java.io.File(skillDir, "SKILL.md")
-        val content = ZStream
-          .fromPath(skillFile.toPath)
-          .runCollect
-          .mapBoth(
-            e => SkillError.InvalidSkillMd(s"Failed to read SKILL.md: ${e.getMessage}"),
-            chunk => String(chunk.toArray, StandardCharsets.UTF_8),
-          )
-          .run
-
-        val meta = SkillParser.parse(content).run
-        val groupId = Models.groupId
-        val artifactId = artifactIdFor(location.org, location.repo, location.path).run
-        val gav = MavenCentral.GroupArtifactVersion(groupId, artifactId, version)
-
-        val exists = checkArtifactExists(gav.groupId, gav.artifactId, gav.version).run
-        ZIO.fail(SkillError.DuplicateVersion(gav)).when(exists).run
-
-        val skillDirLicenses = GitService.detectLicenses(skillDir)
-        val skillLevelLicenses = meta.licenses ++ skillDirLicenses
-        val resolvedList =
-          if skillLevelLicenses.nonEmpty then skillLevelLicenses
-          else if repoInfo.licenses.nonEmpty then repoInfo.licenses
-          else
-            val repoUrl = s"https://github.com/$org/$repo"
-            GitService.findLicenseFile(skillDir) match
-              case Some(fileName) =>
-                val licenseName = meta.rawLicense.getOrElse("See LICENSE file")
-                if location.path.isEmpty then
-                  List(License(licenseName, s"$repoUrl/blob/main/$fileName"))
-                else
-                  List(License(licenseName, s"$repoUrl/blob/main/${location.path.mkString("/")}/$fileName"))
-              case None => Nil
-        val licenses = ZIO.fromOption(NonEmptyChunk.fromIterableOption(resolvedList))
-          .orElseFail(SkillError.NoLicense).run
-        val pom = PomGenerator.generate(groupId, artifactId, version, meta.name, meta.description, licenses, org, repo)
-        val jar = JarCreator.create(skillDir, org, repo, location.path, pom, groupId, artifactId, version)
+        val pom = PomGenerator.generate(validated.gav.groupId, validated.gav.artifactId, version,
+          validated.meta.name, validated.meta.description, validated.licenses,
+          validated.location.org, validated.location.repo)
+        val jar = JarCreator.create(validated.skillDir, validated.location.org, validated.location.repo,
+          validated.location.path, pom, validated.gav.groupId, validated.gav.artifactId, version)
           .mapError(e => SkillError.InvalidSkillMd(s"JAR creation failed: ${e.getMessage}")).run
-
-        (gav, pom, jar)
+        (validated.gav, pom, jar)
 
     defer:
       val resultsRef = Ref.make(Map.empty[SkillName, SkillResult]).run
 
       val zipBytes =
         ZStream
-          .fromIterable(repoInfo.skills)
-          .mapZIO: (location, skillDir) =>
-            processSkill(location, skillDir).foldZIO(
+          .fromIterable(skills)
+          .mapZIO: validated =>
+            buildArtifacts(validated).foldZIO(
               error =>
-                resultsRef.update(_ + (location.skillName -> SkillResult.Skipped(error))).as(Chunk.empty),
+                resultsRef.update(_ + (validated.location.skillName -> SkillResult.Skipped(error))).as(Chunk.empty),
               { case (gav, pom, jar) =>
                 defer:
                   val maybePomAsc = ascSign(pom).run
                   val maybeJarAsc = ascSign(jar).run
 
-                  resultsRef.update(_ + (location.skillName -> SkillResult.Success(gav))).run
+                  resultsRef.update(_ + (validated.location.skillName -> SkillResult.Success(gav))).run
 
                   val base = artifactBasePath(gav)
 

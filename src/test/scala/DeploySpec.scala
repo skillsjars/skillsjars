@@ -14,7 +14,18 @@ object DeploySpec extends ZIOSpecDefault:
     defer:
       val repoInfo = GitService.cloneAndScan(org, repo).run
       val version = repoInfo.version
-      deployer.deployFrom(org, repo, version, repoInfo).mapError(e => DeployError(org, repo, RepoErrorKind.NotFound)).run
+      val validationResults = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+        deployer.validateSkill(org, repo, version, location, skillDir, repoInfo.licenses)
+          .fold(
+            error => Left((location.skillName, error)),
+            validated => Right(validated),
+          )
+      .run
+      val validated = validationResults.collect { case Right(v) => v }
+      val skipped = validationResults.collect { case Left((n, e)) => n -> SkillResult.Skipped(e) }.toMap
+      val deployResults = deployer.deployValidated(org, repo, version, validated)
+        .mapError(e => DeployError(org, repo, RepoErrorKind.NotFound)).run
+      skipped ++ deployResults
 
   private def readJarEntries(jar: Chunk[Byte]): ZIO[Any, Throwable, Map[String, Chunk[Byte]]] =
     ZStream.fromChunk(jar)
@@ -96,7 +107,17 @@ object DeploySpec extends ZIOSpecDefault:
             val deployer = ZIO.service[Deployer[Any]].run
             val repoInfo = GitService.cloneAndScan(Org("anthropics"), Repo("skills")).run
             val version = repoInfo.version
-            val results = deployer.deployFrom(Org("anthropics"), Repo("skills"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val validationResults = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+              deployer.validateSkill(Org("anthropics"), Repo("skills"), version, location, skillDir, repoInfo.licenses)
+                .fold(
+                  error => Left((location.skillName, error)),
+                  validated => Right(validated),
+                )
+            .run
+            val validated = validationResults.collect { case Right(v) => v }
+            val validationSkipped = validationResults.collect { case Left((n, e)) => n -> SkillResult.Skipped(e) }.toMap
+            val deployResults = deployer.deployValidated(Org("anthropics"), Repo("skills"), version, validated).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val results = validationSkipped ++ deployResults
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
@@ -124,7 +145,15 @@ object DeploySpec extends ZIOSpecDefault:
             val deployer = ZIO.service[Deployer[Any]].run
             val repoInfo = GitService.cloneAndScan(Org("anthropics"), Repo("skills")).run
             val version = repoInfo.version
-            val results = deployer.deployFrom(Org("anthropics"), Repo("skills"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val validationResults = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+              deployer.validateSkill(Org("anthropics"), Repo("skills"), version, location, skillDir, repoInfo.licenses)
+                .fold(
+                  error => Left((location.skillName, error)),
+                  validated => Right(validated),
+                )
+            .run
+            val validated = validationResults.collect { case Right(v) => v }
+            val results = deployer.deployValidated(Org("anthropics"), Repo("skills"), version, validated).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
 
@@ -143,7 +172,10 @@ object DeploySpec extends ZIOSpecDefault:
             val deployer = ZIO.service[Deployer[Any]].run
             val repoInfo = GitService.cloneAndScan(Org("brunoborges"), Repo("jdb-agentic-debugger")).run
             val version = repoInfo.version
-            val results = deployer.deployFrom(Org("brunoborges"), Repo("jdb-agentic-debugger"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val validated = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+              deployer.validateSkill(Org("brunoborges"), Repo("jdb-agentic-debugger"), version, location, skillDir, repoInfo.licenses)
+            .catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val results = deployer.deployValidated(Org("brunoborges"), Repo("jdb-agentic-debugger"), version, validated).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
@@ -171,7 +203,10 @@ object DeploySpec extends ZIOSpecDefault:
             val deployer = ZIO.service[Deployer[Any]].run
             val repoInfo = GitService.cloneAndScan(Org("jdubois"), Repo("dr-jskill")).run
             val version = repoInfo.version
-            val results = deployer.deployFrom(Org("jdubois"), Repo("dr-jskill"), version, repoInfo).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val validated = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+              deployer.validateSkill(Org("jdubois"), Repo("dr-jskill"), version, location, skillDir, repoInfo.licenses)
+            .catchAll(e => ZIO.die(RuntimeException(e.toString))).run
+            val results = deployer.deployValidated(Org("jdubois"), Repo("dr-jskill"), version, validated).catchAll(e => ZIO.die(RuntimeException(e.toString))).run
 
             val mockDeployer = deployer.asInstanceOf[MockDeployer]
             val files = readJarEntries(mockDeployer.upload.get._2).run
@@ -196,24 +231,33 @@ object DeploySpec extends ZIOSpecDefault:
             val deployer = ZIO.service[Deployer[Any]].run
             val existingVersion = MavenCentral.Version("2026_02_06-1ed29a0")
             val repoInfo = GitService.cloneAndScan(Org("anthropics"), Repo("skills")).run
-            val result = deployer.deployFrom(Org("anthropics"), Repo("skills"), existingVersion, repoInfo).exit.run
+            val validationResults = ZIO.foreach(repoInfo.skills): (location, skillDir) =>
+              deployer.validateSkill(Org("anthropics"), Repo("skills"), existingVersion, location, skillDir, repoInfo.licenses)
+                .fold(
+                  error => Left((location.skillName, error)),
+                  validated => Right(validated),
+                )
+            .run
+            val validated = validationResults.collect { case Right(v) => v }
+            val skipped = validationResults.collect { case Left((n, e)) => n -> e }.toMap
 
-            result match
+            val result = deployer.deployValidated(Org("anthropics"), Repo("skills"), existingVersion, validated).exit.run
+
+            val allDuplicates = skipped.collect { case (name, SkillError.DuplicateVersion(_)) => name }
+            val deployDuplicates = result match
               case Exit.Failure(cause) =>
                 cause.failureOption match
-                  case Some(DeployJobError.NoPublishableSkills(skipped)) =>
-                    val duplicates = skipped.collect { case (name, SkillError.DuplicateVersion(_)) => name }
-                    assertTrue(
-                      duplicates.exists(_ == SkillName("algorithmic-art")),
-                      duplicates.nonEmpty,
-                    )
-                  case other => assertTrue(false)
+                  case Some(DeployJobError.NoPublishableSkills(s)) =>
+                    s.collect { case (name, SkillError.DuplicateVersion(_)) => name }
+                  case _ => Iterable.empty
               case Exit.Success(results) =>
-                val duplicates = results.collect { case (name, SkillResult.Skipped(SkillError.DuplicateVersion(_))) => name }
-                assertTrue(
-                  duplicates.exists(_ == SkillName("algorithmic-art")),
-                  duplicates.nonEmpty,
-                )
+                results.collect { case (name, SkillResult.Skipped(SkillError.DuplicateVersion(_))) => name }
+            val duplicates = allDuplicates ++ deployDuplicates
+
+            assertTrue(
+              duplicates.exists(_ == SkillName("algorithmic-art")),
+              duplicates.nonEmpty,
+            )
       .provide(MockDeployer.layerWithCheck, Client.default)
     ),
     suite("artifactIdFor")(
