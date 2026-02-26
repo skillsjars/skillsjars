@@ -275,6 +275,15 @@ object UI:
               |Managing Agent Skills as packaged dependencies enables versioning, grouping as transitive dependencies, and avoiding copy & pasting files.
               |""".stripMargin
           ),
+          div(
+            `class` := "bg-amber-50 border border-amber-200 rounded-lg p-4",
+            p(`class` := "font-semibold text-amber-800", "Security Warning"),
+            p(`class` := "text-sm text-amber-700 mt-1",
+              """Agent Skills can be dangerous / do malicous things and should be vetted before use.
+                |While SkillsJars does a basic security scan of the Skills before they are published, it is not a substitute for proper security reviews.
+                |""".stripMargin
+            ),
+          )
         ),
 
         // AI Code Assistants
