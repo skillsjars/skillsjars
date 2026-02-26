@@ -426,6 +426,85 @@ object UI:
             ),
           ),
         ),
+
+        // Creating SkillsJars
+        div(
+          `class` := "bg-white rounded-lg shadow p-6 mt-6",
+          h3(`class` := "text-xl font-bold text-gray-900 mb-3", "Creating SkillsJars"),
+          p(`class` := "text-gray-700 mb-4",
+            "You can package your own Agent Skills as SkillsJars and publish them to Maven Central via ",
+            a(href := "/", `class` := "text-blue-600 hover:underline", "SkillsJars.com"),
+            ".",
+          ),
+
+          p(`class` := "font-semibold text-gray-800 mb-2", "1. Create a skills directory"),
+          p(`class` := "text-gray-700 mb-1",
+            "Add a ", code(`class` := "bg-gray-100 px-1 rounded", "skills"),
+            " directory to your project root. Each subdirectory is a skill and must contain a ",
+            code(`class` := "bg-gray-100 px-1 rounded", "SKILL.md"),
+            " marker file following the ",
+            a(href := "https://agentskills.io/specification", `class` := "text-blue-600 hover:underline", "Agent Skills specification"),
+            ".",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+            """|skills/
+               |├── my-skill/
+               |│   ├── SKILL.md
+               |│   └── helpers.py
+               |└── another-skill/
+               |    └── SKILL.md""".stripMargin,
+          ),
+
+          p(`class` := "font-semibold text-gray-800 mb-2", "2. Add the Maven plugin"),
+          p(`class` := "text-gray-700 mb-1",
+            "Add the SkillsJars Maven plugin with the ", code(`class` := "bg-gray-100 px-1 rounded", "package"), " goal:",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+            """|<build>
+               |    <plugins>
+               |        <plugin>
+               |            <groupId>com.skillsjars</groupId>
+               |            <artifactId>maven-plugin</artifactId>
+               |            <version>0.0.5</version>
+               |            <executions>
+               |                <execution>
+               |                    <goals>
+               |                        <goal>package</goal>
+               |                    </goals>
+               |                </execution>
+               |            </executions>
+               |        </plugin>
+               |    </plugins>
+               |</build>""".stripMargin,
+          ),
+
+          p(`class` := "font-semibold text-gray-800 mb-2", "3. Build the JAR"),
+          p(`class` := "text-gray-700 mb-1",
+            "The plugin runs during ", code(`class` := "bg-gray-100 px-1 rounded", "mvn package"),
+            " and places skills into ", code(`class` := "bg-gray-100 px-1 rounded", "META-INF/skills/"),
+            " inside your JAR. If your project has GitHub SCM configured in the POM, it uses the org/repo from the URL. Otherwise it uses the project's groupId.",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+            "mvn package",
+          ),
+
+          p(`class` := "font-semibold text-gray-800 mb-2", "4. Publish to Maven Central"),
+          p(`class` := "text-gray-700 mb-4",
+            "Push your skills to a public GitHub repository and use the ",
+            a(href := "/", `class` := "text-blue-600 hover:underline", "Publish a SkillsJar"),
+            " form on the homepage to deploy them to Maven Central.",
+          ),
+
+          div(
+            `class` := "bg-blue-50 border border-blue-200 rounded-lg p-4 mt-2",
+            p(`class` := "font-semibold text-blue-800 mb-1", "Tip: Custom skills directory"),
+            p(`class` := "text-sm text-blue-700",
+              "By default the plugin looks for skills in ", code(`class` := "bg-blue-100 px-1 rounded", "skills/"),
+              " at the project root. You can customize this with the ", code(`class` := "bg-blue-100 px-1 rounded", "skillsDir"),
+              " configuration parameter.",
+            ),
+          ),
+        ),
       ),
       tailwind,
       currentPath = "/docs",
