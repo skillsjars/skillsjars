@@ -44,7 +44,7 @@ object App extends ZIOAppDefault:
         case Some(DeployJobStatus.Failed(error)) =>
           Response.html(UI.deployJobError(error, tailwind))
         case None =>
-          Response.html(UI.deployJobError(DeployJobError.PublishFailed("Unknown deploy job"), tailwind))
+          Response.html(UI.deployNotFound(org, repo, tailwind))
 
   def appRoutes[A : Tag](webJars: WebJars): Routes[DeployJobs & Deployer[A] & A & SkillsJarCache & Client & HerokuInference, Nothing] =
     val tailwind = webJars.url("tailwindcss__browser", "/dist/index.global.js")

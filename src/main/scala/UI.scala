@@ -519,6 +519,33 @@ object UI:
       currentPath = "/docs",
     )
 
+  def deployNotFound(org: String, repo: String, tailwind: URL): Dom =
+    page(
+      "Deploy Not Found",
+      div(
+        a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
+        div(
+          `class` := "bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4",
+          p(`class` := "font-semibold text-amber-800", "Deploy job not found"),
+          p(`class` := "text-sm text-amber-700 mt-1", s"No deploy found for $org/$repo at this version."),
+        ),
+        form(
+          `class` := "mt-6",
+          action := "/deploy",
+          method := "post",
+          Dom.attr("onsubmit", "var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Deploying...'"),
+          input(`type` := "hidden", name := "org", value := org),
+          input(`type` := "hidden", name := "repo", value := repo),
+          button(
+            `type` := "submit",
+            `class` := "px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 cursor-pointer",
+            s"Deploy $org/$repo",
+          ),
+        ),
+      ),
+      tailwind,
+    )
+
   def deployInProgress(org: String, repo: String, tailwind: URL): Dom =
     page(
       "Deploying...",
@@ -631,24 +658,36 @@ object UI:
     )
 
   def deployJobError(error: DeployJobError, tailwind: URL): Dom =
-    val message = error match
+    error match
       case DeployJobError.NoPublishableSkills(skipped) =>
-        val reasons = skipped.map((name, error) => s"$name: ${skillErrorMessage(error)}").mkString("; ")
-        s"No skills could be published. $reasons"
-      case DeployJobError.PublishFailed(reason) => s"Publish failed: $reason"
-
-    page(
-      "Deploy Error",
-      div(
-        a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
-        div(
-          `class` := "bg-red-50 border border-red-200 rounded-lg p-4 mt-4",
-          p(`class` := "font-semibold text-red-800", "Deploy failed"),
-          p(`class` := "text-sm text-red-700 mt-1", message),
-        ),
-      ),
-      tailwind,
-    )
+        page(
+          "Deploy Error",
+          div(
+            a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
+            div(
+              `class` := "bg-red-50 border border-red-200 rounded-lg p-4 mt-4",
+              p(`class` := "font-semibold text-red-800", "No skills could be published"),
+            ),
+            div(
+              `class` := "space-y-3 mt-4",
+              skipped.toSeq.map((name, error) => skillResultCard(name, SkillResult.Skipped(error))),
+            ),
+          ),
+          tailwind,
+        )
+      case DeployJobError.PublishFailed(reason) =>
+        page(
+          "Deploy Error",
+          div(
+            a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
+            div(
+              `class` := "bg-red-50 border border-red-200 rounded-lg p-4 mt-4",
+              p(`class` := "font-semibold text-red-800", "Deploy failed"),
+              p(`class` := "text-sm text-red-700 mt-1", s"Publish failed: $reason"),
+            ),
+          ),
+          tailwind,
+        )
 
   def formError(reason: String, tailwind: URL): Dom =
     page(
