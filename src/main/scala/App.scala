@@ -21,7 +21,8 @@ object App extends ZIOAppDefault:
         .orElseFail("Missing org parameter").run
       val repo = ZIO.fromOption(formResult.get("repo").flatMap(_.stringValue).map(Repo(_)))
         .orElseFail("Missing repo parameter").run
-      val version = deployJobs.start[A](org, repo).run
+      val maybeVersion = formResult.get("version").flatMap(_.stringValue).map(MavenCentral.Version(_))
+      val version = deployJobs.start[A](org, repo, maybeVersion).run
       deployJobs.get(org, repo, version).run match
         case Some(DeployJobStatus.Done(results)) =>
           Response.html(UI.deployDone(results, tailwind))

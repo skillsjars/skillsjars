@@ -23,7 +23,11 @@ object DeployHandlerSpec extends ZIOSpecDefault:
     .provide(MockDeployer.layer, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer)
     ,
     test("deploy of existing artifacts shows duplicate versions"):
-      val body = Body.fromURLEncodedForm(Form(FormField.textField("org", "anthropics"), FormField.textField("repo", "skills")))
+      val body = Body.fromURLEncodedForm(Form(
+        FormField.textField("org", "anthropics"),
+        FormField.textField("repo", "skills"),
+        FormField.textField("version", "2026_02_25-3d59511"),
+      ))
       val request = Request.post(URL.decode("/deploy").toOption.get, body)
 
       defer:

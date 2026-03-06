@@ -11,20 +11,20 @@ class DeployJobs(
   jobs: ConcurrentMap[(Org, Repo, MavenCentral.Version), DeployJobStatus],
 ):
 
-  def start[A: Tag](org: Org, repo: Repo): ZIO[Deployer[A] & A & Client & HerokuInference, DeployError, MavenCentral.Version] =
+  def start[A: Tag](org: Org, repo: Repo, maybeVersion: Option[MavenCentral.Version] = None): ZIO[Deployer[A] & A & Client & HerokuInference, DeployError, MavenCentral.Version] =
     defer:
       val versionPromise = Promise.make[DeployError, MavenCentral.Version].run
-      cloneAndDeploy[A](org, repo, versionPromise).disconnect.forkDaemon.run
+      cloneAndDeploy[A](org, repo, maybeVersion, versionPromise).disconnect.forkDaemon.run
       versionPromise.await.run
 
   def get(org: Org, repo: Repo, version: MavenCentral.Version): UIO[Option[DeployJobStatus]] =
     jobs.get((org, repo, version))
 
-  private def cloneAndDeploy[A: Tag](org: Org, repo: Repo, versionPromise: Promise[DeployError, MavenCentral.Version]): ZIO[Deployer[A] & A & Client & HerokuInference, Nothing, Unit] =
+  private def cloneAndDeploy[A: Tag](org: Org, repo: Repo, maybeVersion: Option[MavenCentral.Version], versionPromise: Promise[DeployError, MavenCentral.Version]): ZIO[Deployer[A] & A & Client & HerokuInference, Nothing, Unit] =
     ZIO.scoped:
       defer:
-        val repoInfo = GitService.cloneAndScan(org, repo).tapError(e => versionPromise.fail(e)).run
-        val version = repoInfo.version
+        val repoInfo = GitService.cloneAndScan(org, repo, maybeVersion).tapError(e => versionPromise.fail(e)).run
+        val version = maybeVersion.getOrElse(repoInfo.version)
         val key = (org, repo, version)
 
         versionPromise.succeed(version).run

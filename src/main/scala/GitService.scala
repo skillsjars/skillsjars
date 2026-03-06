@@ -22,8 +22,11 @@ object GitService:
     licenses: List[License],
   )
 
+  private def commitFromVersion(version: MavenCentral.Version): String =
+    version.toString.split('-').last
+
   // any reason to keep the dir around longer?
-  def cloneAndScan(org: Org, repo: Repo): ZIO[Scope, DeployError, RepoInfo] =
+  def cloneAndScan(org: Org, repo: Repo, maybeVersion: Option[MavenCentral.Version] = None): ZIO[Scope, DeployError, RepoInfo] =
     defer:
       val tmpDir = ZIO.acquireRelease(
         ZIO.attemptBlocking(Files.createTempDirectory("skillsjars-")).orDie
@@ -32,14 +35,20 @@ object GitService:
       val repoUrl = s"https://github.com/$org/$repo.git"
 
       val git = ZIO.attemptBlocking:
-        Git.cloneRepository()
+        val cmd = Git.cloneRepository()
           .setURI(repoUrl)
           .setDirectory(tmpDir.toFile)
-          .setDepth(1)
-          .call()
+        if maybeVersion.isEmpty then cmd.setDepth(1)
+        cmd.call()
       .orElseFail(DeployError(org, repo, RepoErrorKind.NotFound)).run
 
-      val version = extractVersion(git).run
+      val commitRef = maybeVersion.map(commitFromVersion)
+      ZIO.foreach(commitRef): ref =>
+        ZIO.attemptBlocking(git.checkout().setName(ref).call())
+          .orElseFail(DeployError(org, repo, RepoErrorKind.NotFound))
+      .run
+
+      val version = maybeVersion.getOrElse(extractVersion(git).run)
 
       val skillsDir = File(tmpDir.toFile, "skills")
       val scanRoot = if skillsDir.isDirectory then skillsDir else tmpDir.toFile
