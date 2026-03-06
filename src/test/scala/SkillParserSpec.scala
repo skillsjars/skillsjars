@@ -118,4 +118,131 @@ object SkillParserSpec extends ZIOSpecDefault:
         val result = SkillParser.parse(content).exit.run
         assertTrue(result.isFailure)
     ,
+    suite("skill name validation")(
+      test("accepts single character name"):
+        defer:
+          val content =
+            """---
+              |name: a
+              |description: A skill
+              |---
+              |""".stripMargin
+          val meta = SkillParser.parse(content).run
+          assertTrue(meta.name == SkillName("a"))
+      ,
+      test("accepts max length name"):
+        defer:
+          val name = "a" * 64
+          val content =
+            s"""---
+               |name: $name
+               |description: A skill
+               |---
+               |""".stripMargin
+          val meta = SkillParser.parse(content).run
+          assertTrue(meta.name == SkillName(name))
+      ,
+      test("rejects name longer than 64 characters"):
+        defer:
+          val name = "a" * 65
+          val content =
+            s"""---
+               |name: $name
+               |description: A skill
+               |---
+               |""".stripMargin
+          val result = SkillParser.parse(content).exit.run
+          assertTrue(result match
+            case Exit.Failure(cause) =>
+              cause.failureOption.contains(SkillError.InvalidSkillMd("Skill name must be 1-64 characters"))
+            case _ => false
+          )
+      ,
+      test("rejects name starting with hyphen"):
+        defer:
+          val content =
+            """---
+              |name: -my-skill
+              |description: A skill
+              |---
+              |""".stripMargin
+          val result = SkillParser.parse(content).exit.run
+          assertTrue(result match
+            case Exit.Failure(cause) =>
+              cause.failureOption.contains(SkillError.InvalidSkillMd("Skill name must not start or end with a hyphen"))
+            case _ => false
+          )
+      ,
+      test("rejects name ending with hyphen"):
+        defer:
+          val content =
+            """---
+              |name: my-skill-
+              |description: A skill
+              |---
+              |""".stripMargin
+          val result = SkillParser.parse(content).exit.run
+          assertTrue(result match
+            case Exit.Failure(cause) =>
+              cause.failureOption.contains(SkillError.InvalidSkillMd("Skill name must not start or end with a hyphen"))
+            case _ => false
+          )
+      ,
+      test("rejects name with consecutive hyphens"):
+        defer:
+          val content =
+            """---
+              |name: my--skill
+              |description: A skill
+              |---
+              |""".stripMargin
+          val result = SkillParser.parse(content).exit.run
+          assertTrue(result match
+            case Exit.Failure(cause) =>
+              cause.failureOption.contains(SkillError.InvalidSkillMd("Skill name must not contain consecutive hyphens"))
+            case _ => false
+          )
+      ,
+      test("rejects name with uppercase characters"):
+        defer:
+          val content =
+            """---
+              |name: MySkill
+              |description: A skill
+              |---
+              |""".stripMargin
+          val result = SkillParser.parse(content).exit.run
+          assertTrue(result match
+            case Exit.Failure(cause) =>
+              cause.failureOption.contains(SkillError.InvalidSkillMd("Skill name may only contain lowercase alphanumeric characters and hyphens"))
+            case _ => false
+          )
+      ,
+      test("rejects name with special characters"):
+        defer:
+          val content =
+            """---
+              |name: my_skill
+              |description: A skill
+              |---
+              |""".stripMargin
+          val result = SkillParser.parse(content).exit.run
+          assertTrue(result match
+            case Exit.Failure(cause) =>
+              cause.failureOption.contains(SkillError.InvalidSkillMd("Skill name may only contain lowercase alphanumeric characters and hyphens"))
+            case _ => false
+          )
+      ,
+      test("accepts name with digits"):
+        defer:
+          val content =
+            """---
+              |name: skill123
+              |description: A skill
+              |---
+              |""".stripMargin
+          val meta = SkillParser.parse(content).run
+          assertTrue(meta.name == SkillName("skill123"))
+      ,
+    ),
   )

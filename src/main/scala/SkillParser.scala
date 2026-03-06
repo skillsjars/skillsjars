@@ -44,5 +44,6 @@ object SkillParser:
         case Some(SequenceNode(nodes, _))  => (nodes.toList.collect { case ScalarNode(v, _) => v }, None)
         case _                             => (Nil, None)
 
+      val validatedName = SkillName.validated(name).run
       val licenses = spdxIds.flatMap(Models.licenseFromSpdxId)
-      SkillMeta(SkillName(name), description, licenses, rawLicense)
+      SkillMeta(validatedName, description, licenses, rawLicense)

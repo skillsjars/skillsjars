@@ -17,6 +17,16 @@ object Models:
   object SkillName:
     def apply(s: String): SkillName = s
 
+    private val validPattern = raw"[a-z0-9-]+".r
+
+    def validated(s: String): IO[SkillError, SkillName] =
+      if s.isEmpty then ZIO.fail(SkillError.InvalidSkillMd("Skill name must not be empty"))
+      else if s.length > 64 then ZIO.fail(SkillError.InvalidSkillMd("Skill name must be 1-64 characters"))
+      else if s.startsWith("-") || s.endsWith("-") then ZIO.fail(SkillError.InvalidSkillMd("Skill name must not start or end with a hyphen"))
+      else if s.contains("--") then ZIO.fail(SkillError.InvalidSkillMd("Skill name must not contain consecutive hyphens"))
+      else if !validPattern.matches(s) then ZIO.fail(SkillError.InvalidSkillMd("Skill name may only contain lowercase alphanumeric characters and hyphens"))
+      else ZIO.succeed(s)
+
   case class License(name: String, url: String)
 
   val spdxLicenses: Map[String, License] = Map(
