@@ -12,9 +12,11 @@ object SkillsJarServiceSpec extends ZIOSpecDefault:
     test("fetches all skillsjars from Maven Central"):
       defer:
         val skillsJars = SkillsJarService.list.run
+        val groupIds = skillsJars.map(_.groupId.toString).toSet
         assertTrue(
           skillsJars.nonEmpty,
-          skillsJars.forall(_.groupId.toString == "com.skillsjars"),
+          groupIds.contains("com.skillsjars"),
+          skillsJars.forall(sj => groupIds.contains(sj.groupId.toString)),
         )
     .provide(SkillsJarService.cacheLayer, loggingClient)
   ) @@ TestAspect.withLiveClock

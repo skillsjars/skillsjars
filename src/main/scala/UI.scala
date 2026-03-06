@@ -187,7 +187,17 @@ object UI:
       div(
         `class` := "flex justify-between items-start",
         div(
-          h3(`class` := "font-semibold text-gray-900", sj.name),
+          div(
+            `class` := "flex items-center gap-2",
+            h3(`class` := "font-semibold text-gray-900", sj.name),
+            if sj.securityScanned then
+              span(`class` := "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800",
+                // shield checkmark svg
+                Dom.raw("""<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 1a1 1 0 01.78.375l5 6.5A1 1 0 0116 8.5V14a4 4 0 01-4 4H8a4 4 0 01-4-4V8.5a1 1 0 01.22-.625l5-6.5A1 1 0 0110 1zm-1.293 9.707a1 1 0 010-1.414L10 8l1.293 1.293a1 1 0 01-1.414 1.414L10 10.414l-.293.293a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>"""),
+                "Security Scanned",
+              )
+            else Dom.empty,
+          ),
           p(`class` := "text-sm text-gray-600 mt-1", sj.description),
         ),
         div(

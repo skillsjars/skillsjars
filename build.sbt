@@ -36,6 +36,8 @@ libraryDependencies ++= Seq(
 
   "org.scala-lang.modules" %% "scala-xml" % "2.4.0",
   "org.virtuslab" %% "scala-yaml" % "0.3.1",
+  "dev.zio" %% "zio-config"           % "4.0.6",
+  "dev.zio" %% "zio-config-typesafe"  % "4.0.6",
 
   "org.bouncycastle" % "bcpg-jdk18on" % "1.83",
 

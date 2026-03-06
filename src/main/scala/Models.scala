@@ -59,7 +59,25 @@ object Models:
   case class SkillLocation(org: Org, repo: Repo, path: List[String]):
     def skillName: SkillName = if path.isEmpty then repo else path.last
 
-  case class SkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, versions: Seq[MavenCentral.Version], name: String, description: String)
+  case class SkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, versions: Seq[MavenCentral.Version], name: String, description: String, securityScanned: Boolean)
+
+  case class SkillsJarSource(groupId: MavenCentral.GroupId, artifactId: Option[MavenCentral.ArtifactId], excludeArtifacts: List[String], securityScanned: Boolean):
+    def isExcluded(aid: MavenCentral.ArtifactId): Boolean =
+      excludeArtifacts.exists(pattern => globMatches(pattern, aid.toString))
+
+  private def globMatches(pattern: String, value: String): Boolean =
+    val regex = ("^" + pattern.replace("*", ".*") + "$").r
+    regex.matches(value)
+
+  val skillsJarSourceConfig: Config[SkillsJarSource] =
+    (Config.string("group-id") ++
+      Config.string("artifact-id").optional ++
+      Config.listOf("exclude-artifacts", Config.string).withDefault(Nil) ++
+      Config.boolean("security-scanned")).map: (gid, aid, excludes, scanned) =>
+      SkillsJarSource(MavenCentral.GroupId(gid), aid.map(MavenCentral.ArtifactId(_)), excludes, scanned)
+
+  val skillsJarSourcesConfig: Config[List[SkillsJarSource]] =
+    Config.listOf("sources", skillsJarSourceConfig)
 
   enum Severity derives Schema:
     case Critical, High, Medium, Low

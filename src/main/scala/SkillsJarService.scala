@@ -2,6 +2,7 @@ import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
 import zio.cache.*
+import zio.config.typesafe.TypesafeConfigProvider
 import zio.direct.*
 import zio.http.Client
 
@@ -37,21 +38,36 @@ object SkillsJarService:
         case Exit.Failure(_) => Duration.Zero
       .map(SkillsJarCache(_))
 
+  private def loadSources: Task[List[SkillsJarSource]] =
+    ZIO.config(Models.skillsJarSourcesConfig)
+      .withConfigProvider(TypesafeConfigProvider.fromResourcePath())
+
   private def fetchAllSkillsJars: ZIO[Client, ServiceError, Seq[SkillsJar]] =
     ZIO.scoped:
       defer:
-        val gid = Models.groupId
-        val entries = MavenCentral.searchArtifacts(gid)
-          .map(_.value.filterNot(a => a.toString.endsWith("maven-plugin") || a.toString.endsWith("gradle-plugin")))
-          .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.ArtifactId]))
-          .run
-        val results = ZIO.foreachPar(entries): entry =>
-          ZIO.scoped:
-            fetchSkillsJar(gid, entry).map(Some(_)).catchAll(_ => ZIO.none)
+        val sources = loadSources.catchAll(e => ZIO.succeed(List(SkillsJarSource(Models.groupId, None, Nil, true)))).run
+        val allResults = ZIO.foreachPar(sources): source =>
+          fetchForSource(source).catchAll(_ => ZIO.succeed(Seq.empty[SkillsJar]))
         .run
-        results.flatten
+        allResults.flatten
 
-  private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): ZIO[Client & Scope, Throwable, SkillsJar] =
+  private def fetchForSource(source: SkillsJarSource): ZIO[Client & Scope, Throwable, Seq[SkillsJar]] =
+    source.artifactId match
+      case Some(aid) =>
+        fetchSkillsJar(source.groupId, aid, source.securityScanned).map(Seq(_))
+      case None =>
+        defer:
+          val entries = MavenCentral.searchArtifacts(source.groupId)
+            .map(_.value.filterNot(source.isExcluded))
+            .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.ArtifactId]))
+            .run
+          val results = ZIO.foreachPar(entries): entry =>
+            ZIO.scoped:
+              fetchSkillsJar(source.groupId, entry, source.securityScanned).map(Some(_)).catchAll(_ => ZIO.none)
+          .run
+          results.flatten
+
+  private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, securityScanned: Boolean): ZIO[Client & Scope, Throwable, SkillsJar] =
     defer:
       val versions = MavenCentral.searchVersions(groupId, artifactId)
         .mapBoth(e => RuntimeException(s"Failed to fetch versions for $artifactId: $e"), _.value).run
@@ -62,4 +78,4 @@ object SkillsJarService:
           (if n.nonEmpty then n else artifactId.toString, if d.nonEmpty then d else "")
         .catchAll(_ => ZIO.succeed((artifactId.toString, "")))
       .run
-      SkillsJar(groupId, artifactId, versions, nameAndDesc._1, nameAndDesc._2)
+      SkillsJar(groupId, artifactId, versions, nameAndDesc._1, nameAndDesc._2, securityScanned)
