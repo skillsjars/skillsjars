@@ -70,6 +70,41 @@ object DeploySpec extends ZIOSpecDefault:
           scmUrl == "https://github.com/myorg/myrepo",
         )
       ,
+      test("includes allowed-tools property when present"):
+        val pomBytes = PomGenerator.generate(
+          MavenCentral.GroupId("com.skillsjars"),
+          MavenCentral.ArtifactId("myorg__myrepo__my-skill"),
+          MavenCentral.Version("2026_02_13-abc1234"),
+          SkillName("my-skill"),
+          "A great skill",
+          NonEmptyChunk(License("MIT License", "https://opensource.org/licenses/MIT")),
+          Org("myorg"),
+          Repo("myrepo"),
+          allowedTools = Some("Bash Read Edit"),
+        )
+        val pom = scala.xml.XML.loadString(pomBytes.asString)
+        val propValue = (pom \ "properties" \ "skillsjars.skill.my-skill.allowed-tools").text
+
+        assertTrue(
+          propValue == "Bash Read Edit",
+        )
+      ,
+      test("omits properties when no allowed-tools"):
+        val pomBytes = PomGenerator.generate(
+          MavenCentral.GroupId("com.skillsjars"),
+          MavenCentral.ArtifactId("myorg__myrepo__my-skill"),
+          MavenCentral.Version("2026_02_13-abc1234"),
+          SkillName("my-skill"),
+          "A great skill",
+          NonEmptyChunk(License("MIT License", "https://opensource.org/licenses/MIT")),
+          Org("myorg"),
+          Repo("myrepo"),
+        )
+        val pom = scala.xml.XML.loadString(pomBytes.asString)
+        val props = (pom \ "properties")
+
+        assertTrue(props.isEmpty)
+      ,
       test("escapes XML special characters in description"):
         val description = "Developer and Non-Developer tracks, plus on-demand Q&A. That's <great> for \"everyone\""
         val pomBytes = PomGenerator.generate(

@@ -245,4 +245,31 @@ object SkillParserSpec extends ZIOSpecDefault:
           assertTrue(meta.name == SkillName("skill123"))
       ,
     ),
+    suite("allowed-tools")(
+      test("parses allowed-tools from frontmatter"):
+        defer:
+          val content =
+            """---
+              |name: my-skill
+              |description: A skill
+              |allowed-tools: Bash Read Edit
+              |---
+              |""".stripMargin
+          val meta = SkillParser.parse(content).run
+          assertTrue(
+            meta.allowedTools.contains("Bash Read Edit"),
+          )
+      ,
+      test("allowed-tools is None when not present"):
+        defer:
+          val content =
+            """---
+              |name: my-skill
+              |description: A skill
+              |---
+              |""".stripMargin
+          val meta = SkillParser.parse(content).run
+          assertTrue(meta.allowedTools.isEmpty)
+      ,
+    ),
   )

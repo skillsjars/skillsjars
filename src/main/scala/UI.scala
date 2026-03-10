@@ -199,6 +199,14 @@ object UI:
             else Dom.empty,
           ),
           p(`class` := "text-sm text-gray-600 mt-1", sj.description),
+          if sj.allowedTools.nonEmpty then
+            div(
+              `class` := "mt-2 flex flex-wrap gap-1",
+              span(`class` := "text-xs text-gray-500", "Allowed tools:"),
+              sj.allowedTools.values.toSeq.flatMap(_.split("\\s+")).filter(_.nonEmpty).distinct.map: tool =>
+                span(`class` := "inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-purple-100 text-purple-800", tool),
+            )
+          else Dom.empty,
         ),
         div(
           `class` := "ml-4",
@@ -321,7 +329,7 @@ object UI:
                |        <plugin>
                |            <groupId>com.skillsjars</groupId>
                |            <artifactId>maven-plugin</artifactId>
-               |            <version>0.0.3</version>
+               |            <version>0.0.6</version>
                |            <dependencies>
                |                <!-- Your SkillsJars -->
                |                <dependency>
@@ -474,7 +482,41 @@ object UI:
                |    └── SKILL.md""".stripMargin,
           ),
 
-          p(`class` := "font-semibold text-gray-800 mb-2", "2. Add the Maven plugin"),
+          p(`class` := "font-semibold text-gray-800 mb-2", "2. SKILL.md frontmatter"),
+          p(`class` := "text-gray-700 mb-1",
+            "Each ", code(`class` := "bg-gray-100 px-1 rounded", "SKILL.md"),
+            " must include YAML frontmatter with ", code(`class` := "bg-gray-100 px-1 rounded", "name"),
+            " and ", code(`class` := "bg-gray-100 px-1 rounded", "description"),
+            ". Optionally include ", code(`class` := "bg-gray-100 px-1 rounded", "allowed-tools"),
+            " (a space-delimited list of pre-approved tools) and ", code(`class` := "bg-gray-100 px-1 rounded", "license"),
+            ".",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+            """|---
+               |name: my-skill
+               |description: A useful skill
+               |allowed-tools: Bash Read Edit
+               |license: MIT
+               |---
+               |# My Skill
+               |...""".stripMargin,
+          ),
+          p(`class` := "text-sm text-gray-500 mb-4",
+            "When published via SkillsJars.com, ", code(`class` := "bg-gray-100 px-1 rounded", "allowed-tools"),
+            " is automatically stored in the POM as a property named ", code(`class` := "bg-gray-100 px-1 rounded", "skillsjars.skill.<name>.allowed-tools"),
+            " so consumers can read it without extracting the JAR.",
+          ),
+          p(`class` := "text-gray-700 mb-1",
+            "If you are packaging SkillsJars yourself with the Maven plugin, you must add matching properties to your ", code(`class` := "bg-gray-100 px-1 rounded", "pom.xml"),
+            ". The plugin validates that the property value matches the SKILL.md and fails the build on any mismatch.",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
+            """|<properties>
+               |    <skillsjars.skill.my-skill.allowed-tools>Bash Read Edit</skillsjars.skill.my-skill.allowed-tools>
+               |</properties>""".stripMargin,
+          ),
+
+          p(`class` := "font-semibold text-gray-800 mb-2", "3. Add the Maven plugin"),
           p(`class` := "text-gray-700 mb-1",
             "Add the SkillsJars Maven plugin with the ", code(`class` := "bg-gray-100 px-1 rounded", "package"), " goal:",
           ),
@@ -484,7 +526,7 @@ object UI:
                |        <plugin>
                |            <groupId>com.skillsjars</groupId>
                |            <artifactId>maven-plugin</artifactId>
-               |            <version>0.0.5</version>
+               |            <version>0.0.6</version>
                |            <executions>
                |                <execution>
                |                    <goals>
@@ -497,7 +539,7 @@ object UI:
                |</build>""".stripMargin,
           ),
 
-          p(`class` := "font-semibold text-gray-800 mb-2", "3. Build the JAR"),
+          p(`class` := "font-semibold text-gray-800 mb-2", "4. Build the JAR"),
           p(`class` := "text-gray-700 mb-1",
             "The plugin runs during ", code(`class` := "bg-gray-100 px-1 rounded", "mvn package"),
             " and places skills into ", code(`class` := "bg-gray-100 px-1 rounded", "META-INF/skills/"),
@@ -507,7 +549,7 @@ object UI:
             "mvn package",
           ),
 
-          p(`class` := "font-semibold text-gray-800 mb-2", "4. Publish to Maven Central"),
+          p(`class` := "font-semibold text-gray-800 mb-2", "5. Publish to Maven Central"),
           p(`class` := "text-gray-700 mb-4",
             "Push your skills to a public GitHub repository and use the ",
             a(href := "/", `class` := "text-blue-600 hover:underline", "Publish a SkillsJar"),

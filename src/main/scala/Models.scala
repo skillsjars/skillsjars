@@ -46,7 +46,7 @@ object Models:
 
   def licenseFromSpdxId(id: String): Option[License] = spdxLicenses.get(id)
 
-  case class SkillMeta(name: SkillName, description: String, licenses: List[License], rawLicense: Option[String] = None)
+  case class SkillMeta(name: SkillName, description: String, licenses: List[License], rawLicense: Option[String] = None, allowedTools: Option[String] = None)
 
   case class ValidatedSkill(
     location: SkillLocation,
@@ -59,7 +59,7 @@ object Models:
   case class SkillLocation(org: Org, repo: Repo, path: List[String]):
     def skillName: SkillName = if path.isEmpty then repo else path.last
 
-  case class SkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, versions: Seq[MavenCentral.Version], name: String, description: String, securityScanned: Boolean)
+  case class SkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, versions: Seq[MavenCentral.Version], name: String, description: String, securityScanned: Boolean, allowedTools: Map[String, String] = Map.empty)
 
   case class SkillsJarSource(groupId: MavenCentral.GroupId, artifactId: Option[MavenCentral.ArtifactId], excludeArtifacts: List[String], securityScanned: Boolean):
     def isExcluded(aid: MavenCentral.ArtifactId): Boolean =

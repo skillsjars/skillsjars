@@ -4,6 +4,8 @@ import zio.*
 
 object PomGenerator:
 
+  val propertyPrefix = "skillsjars.skill."
+
   def generate(
     groupId: MavenCentral.GroupId,
     artifactId: MavenCentral.ArtifactId,
@@ -13,8 +15,14 @@ object PomGenerator:
     licenses: NonEmptyChunk[License],
     org: Org,
     repo: Repo,
+    allowedTools: Option[String] = None,
   ): Chunk[Byte] =
     val scmUrl = s"https://github.com/$org/$repo"
+
+    val properties = allowedTools.map: tools =>
+      <properties>
+        {scala.xml.Elem(null, s"${propertyPrefix}${name}.allowed-tools", scala.xml.Null, scala.xml.TopScope, true, scala.xml.Text(tools))}
+      </properties>
 
     val pom =
       <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -32,6 +40,7 @@ object PomGenerator:
           <url>{scmUrl}</url>
           <connection>scm:git:{scmUrl}.git</connection>
         </scm>
+        {properties.getOrElse(scala.xml.NodeSeq.Empty)}
         <licenses>
           {licenses.toList.map: license =>
             <license>

@@ -67,15 +67,24 @@ object SkillsJarService:
           .run
           results.flatten
 
+  private def extractAllowedTools(pomXml: scala.xml.Elem): Map[String, String] =
+    val prefix = PomGenerator.propertyPrefix
+    (pomXml \ "properties").flatMap(_.child).collect:
+      case e: scala.xml.Elem if e.label.startsWith(prefix) && e.label.endsWith(".allowed-tools") =>
+        val skillName = e.label.stripPrefix(prefix).stripSuffix(".allowed-tools")
+        skillName -> e.text
+    .toMap
+
   private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, securityScanned: Boolean): ZIO[Client & Scope, Throwable, SkillsJar] =
     defer:
       val versions = MavenCentral.searchVersions(groupId, artifactId)
         .mapBoth(e => RuntimeException(s"Failed to fetch versions for $artifactId: $e"), _.value).run
-      val nameAndDesc = versions.headOption.fold(ZIO.succeed((artifactId.toString, ""))): latestVersion =>
+      val nameDescAndTools = versions.headOption.fold(ZIO.succeed((artifactId.toString, "", Map.empty[String, String]))): latestVersion =>
         MavenCentral.pom(groupId, artifactId, latestVersion).map: pomXml =>
           val n = (pomXml \ "name").text
           val d = (pomXml \ "description").text
-          (if n.nonEmpty then n else artifactId.toString, if d.nonEmpty then d else "")
-        .catchAll(_ => ZIO.succeed((artifactId.toString, "")))
+          val tools = extractAllowedTools(pomXml)
+          (if n.nonEmpty then n else artifactId.toString, if d.nonEmpty then d else "", tools)
+        .catchAll(_ => ZIO.succeed((artifactId.toString, "", Map.empty[String, String])))
       .run
-      SkillsJar(groupId, artifactId, versions, nameAndDesc._1, nameAndDesc._2, securityScanned)
+      SkillsJar(groupId, artifactId, versions, nameDescAndTools._1, nameDescAndTools._2, securityScanned, nameDescAndTools._3)

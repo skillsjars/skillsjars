@@ -84,7 +84,7 @@ trait Deployer[Env]:
       defer:
         val pom = PomGenerator.generate(validated.gav.groupId, validated.gav.artifactId, version,
           validated.meta.name, validated.meta.description, validated.licenses,
-          validated.location.org, validated.location.repo)
+          validated.location.org, validated.location.repo, validated.meta.allowedTools)
         val jar = JarCreator.create(validated.skillDir, validated.location.org, validated.location.repo,
           validated.location.path, pom, validated.gav.groupId, validated.gav.artifactId, version)
           .mapError(e => SkillError.InvalidSkillMd(s"JAR creation failed: ${e.getMessage}")).run

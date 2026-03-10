@@ -29,7 +29,7 @@ libraryDependencies ++= Seq(
   "dev.zio" %% "zio-cache"             % "0.2.7",
   "dev.zio" %% "zio-logging"           % "2.5.3",
   "dev.zio" %% "zio-direct"            % "1.0.0-RC7",
-  "dev.zio" %% "zio-http"              % "3.9.0",
+  "dev.zio" %% "zio-http"              % "3.10.0",
   "com.jamesward" %% "zio-mavencentral" % "0.5.4",
 
   "org.eclipse.jgit" % "org.eclipse.jgit" % "7.5.0.202512021534-r",
