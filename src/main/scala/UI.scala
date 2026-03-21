@@ -32,13 +32,13 @@ object UI:
           header(
             `class` := "mb-8",
             div(
-              `class` := "flex items-center justify-between",
+              `class` := "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3",
               h1(
                 `class` := "text-3xl font-bold text-gray-900",
                 a(href := "/", "SkillsJars"),
               ),
               nav(
-                `class` := "flex gap-1 bg-gray-200 rounded-lg p-1",
+                `class` := "flex gap-1 bg-gray-200 rounded-lg p-1 self-start sm:self-auto",
                 navLink("/", "Find SkillsJars", currentPath == "/"),
                 navLink("/docs", "Documentation", currentPath == "/docs"),
               ),
@@ -118,7 +118,7 @@ object UI:
         method := "post",
         Dom.attr("onsubmit", "var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Deploying...'"),
         div(
-          `class` := "flex gap-2 items-end",
+          `class` := "flex flex-col sm:flex-row gap-2 sm:items-end",
           div(
             `class` := "flex-1",
             label(`class` := "block text-sm font-medium text-gray-700 mb-1", `for` := "org", "GitHub Org"),
@@ -185,10 +185,10 @@ object UI:
     div(
       `class` := "bg-white rounded-lg shadow p-4",
       div(
-        `class` := "flex justify-between items-start",
+        `class` := "flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2",
         div(
           div(
-            `class` := "flex items-center gap-2",
+            `class` := "flex flex-wrap items-center gap-2",
             h3(`class` := "font-semibold text-gray-900", sj.name),
             if sj.securityScanned then
               span(`class` := "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800",
@@ -209,7 +209,7 @@ object UI:
           else Dom.empty,
         ),
         div(
-          `class` := "ml-4",
+          `class` := "sm:ml-4 self-start",
           versionSelect(sj),
         ),
       ),
