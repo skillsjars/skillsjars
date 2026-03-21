@@ -87,24 +87,27 @@ object UI:
       input(`type` := "hidden", name := "bt", value := buildTool.param),
       div(
         `class` := "flex gap-2",
-        input(
-          `type` := "text",
-          name := "q",
-          placeholder := "Search skills by name or description...",
-          `class` := "flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500",
-          maybeQuery.map(q => value := q).getOrElse(Dom.empty),
+        div(
+          `class` := "flex-1 relative",
+          input(
+            `type` := "text",
+            name := "q",
+            placeholder := "Search skills by name or description...",
+            `class` := s"w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500${maybeQuery.fold("")(_ => " pr-8")}",
+            maybeQuery.map(q => value := q).getOrElse(Dom.empty),
+          ),
+          maybeQuery.fold(Dom.empty): _ =>
+            a(
+              href := s"/?bt=${buildTool.param}",
+              `class` := "absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer",
+              "✕",
+            ),
         ),
         button(
           `type` := "submit",
           `class` := "px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer",
           "Search",
         ),
-        maybeQuery.fold(Dom.empty): _ =>
-          a(
-            href := s"/?bt=${buildTool.param}",
-            `class` := "px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 cursor-pointer flex items-center",
-            "Clear",
-          ),
       ),
     )
 
