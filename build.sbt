@@ -17,32 +17,35 @@ scalacOptions ++= Seq(
   // "-Xfatal-warnings", // doesn't seem to work anymore
 )
 
-scalaVersion := "3.8.2"
+scalaVersion := "3.8.3"
 
 Test / fork := true
 
-val zioVersion = "2.1.24"
+val zioVersion = "2.1.26"
 
 libraryDependencies ++= Seq(
-  "dev.zio" %% "zio"                   % zioVersion,
-  "dev.zio" %% "zio-concurrent"        % zioVersion,
-  "dev.zio" %% "zio-cache"             % "0.2.7",
-  "dev.zio" %% "zio-logging"           % "2.5.3",
-  "dev.zio" %% "zio-direct"            % "1.0.0-RC7",
-  "dev.zio" %% "zio-http"              % "3.10.0",
-  "com.jamesward" %% "zio-mavencentral" % "0.5.4",
+  "dev.zio" %% "zio"                    % zioVersion,
+  "dev.zio" %% "zio-concurrent"         % zioVersion,
+  "dev.zio" %% "zio-cache"              % "0.2.8",
+  "dev.zio" %% "zio-logging"            % "2.5.3",
+  "dev.zio" %% "zio-direct"             % "1.0.0-RC7",
+  "dev.zio" %% "zio-http"               % "3.11.1",
+  "com.jamesward" %% "zio-mavencentral" % "0.8.0",
+  // Previously transitive via zio-mavencentral <= 0.5.4; now declared
+  // directly because zio-mavencentral dropped its zip dep.
+  "dev.zio" %% "zio-streams-compress-zip" % "2.1.0",
 
-  "org.eclipse.jgit" % "org.eclipse.jgit" % "7.5.0.202512021534-r",
+  "org.eclipse.jgit" % "org.eclipse.jgit" % "7.6.0.202603022253-r",
 
   "org.scala-lang.modules" %% "scala-xml" % "2.4.0",
   "org.virtuslab" %% "scala-yaml" % "0.3.1",
-  "dev.zio" %% "zio-config"           % "4.0.6",
-  "dev.zio" %% "zio-config-typesafe"  % "4.0.6",
+  "dev.zio" %% "zio-config"           % "4.0.7",
+  "dev.zio" %% "zio-config-typesafe"  % "4.0.7",
 
-  "org.bouncycastle" % "bcpg-jdk18on" % "1.83",
+  "org.bouncycastle" % "bcpg-jdk18on" % "1.84",
 
   "org.webjars" % "webjars-locator-lite" % "1.1.3",
-  "org.webjars.npm" % "tailwindcss__browser" % "4.1.18",
+  "org.webjars.npm" % "tailwindcss__browser" % "4.2.1",
 
   "org.slf4j" % "slf4j-simple" % "2.0.17",
 

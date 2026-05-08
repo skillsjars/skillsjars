@@ -1,5 +1,6 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
+import com.jamesward.zio_mavencentral.MavenCentral.retryOnServerError
 import zio.*
 import zio.cache.*
 import zio.config.typesafe.TypesafeConfigProvider
@@ -58,6 +59,7 @@ object SkillsJarService:
       case None =>
         defer:
           val entries = MavenCentral.searchArtifacts(source.groupId)
+            .retryOnServerError
             .map(_.value.filterNot(source.isExcluded))
             .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.ArtifactId]))
             .run
@@ -78,9 +80,10 @@ object SkillsJarService:
   private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, securityScanned: Boolean): ZIO[Client & Scope, Throwable, SkillsJar] =
     defer:
       val versions = MavenCentral.searchVersions(groupId, artifactId)
+        .retryOnServerError
         .mapBoth(e => RuntimeException(s"Failed to fetch versions for $artifactId: $e"), _.value).run
       val nameDescAndTools = versions.headOption.fold(ZIO.succeed((artifactId.toString, "", Map.empty[String, String]))): latestVersion =>
-        MavenCentral.pom(groupId, artifactId, latestVersion).map: pomXml =>
+        MavenCentral.pom(groupId, artifactId, latestVersion).retryOnServerError.map: pomXml =>
           val n = (pomXml \ "name").text
           val d = (pomXml \ "description").text
           val tools = extractAllowedTools(pomXml)
