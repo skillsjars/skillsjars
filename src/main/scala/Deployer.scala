@@ -4,16 +4,12 @@ import com.jamesward.zio_mavencentral.MavenCentral.Deploy.Sonatype
 import zio.*
 import zio.direct.*
 import zio.http.Client
-import org.bouncycastle.bcpg.{ArmoredOutputStream, BCPGOutputStream, HashAlgorithmTags}
-import org.bouncycastle.openpgp.operator.jcajce.{JcaKeyFingerprintCalculator, JcaPGPContentSignerBuilder, JcePBESecretKeyDecryptorBuilder}
-import org.bouncycastle.openpgp.{PGPSecretKeyRing, PGPSignature, PGPSignatureGenerator}
 import zio.compress.*
 import zio.stream.*
 
-import java.io.{ByteArrayOutputStream, File, PipedInputStream, PipedOutputStream}
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.Base64
 
 trait Deployer[Env]:
 
@@ -145,8 +141,7 @@ trait Deployer[Env]:
 
 
 class LiveDeployer(
-  gpgKey: String,
-  maybeGpgPass: Option[String],
+  signer: MavenCentral.Signer,
   sonatype: MavenCentral.Deploy.Sonatype,
 ) extends Deployer[Sonatype]:
 
@@ -155,54 +150,24 @@ class LiveDeployer(
       .mapError(e => DeployJobError.PublishFailed(e.getMessage))
 
   override def ascSign(toSign: Chunk[Byte]): IO[DeployJobError, Option[Chunk[Byte]]] =
-    Deployer.ascSignWith(gpgKey, maybeGpgPass)(toSign).asSome
+    signer.ascSign(toSign)
       .mapError(e => DeployJobError.PublishFailed(s"Signing failed: ${e.getMessage}"))
 
 
 object Deployer:
 
-  private def signError(e: Throwable): Throwable =
-    RuntimeException(s"Signing failed: ${e.getMessage}", e)
-
-  private final class ChunkBuilderOutputStream(builder: ChunkBuilder[Byte]) extends java.io.OutputStream:
-    override def write(b: Int): Unit =
-      builder += b.toByte
-
-    override def write(b: Array[Byte], off: Int, len: Int): Unit =
-      var i = off
-      val end = off + len
-      while i < end do
-        builder += b(i)
-        i += 1
-
-  def ascSignWith(gpgKey: String, gpgPass: Option[String])(toSign: Chunk[Byte]): IO[Throwable, Chunk[Byte]] =
-    ZIO
-      .attempt:
-        val keyBytes = Base64.getDecoder.decode(gpgKey)
-        val secretKeyRing = PGPSecretKeyRing(keyBytes, JcaKeyFingerprintCalculator())
-        val pass = gpgPass.getOrElse("").toCharArray
-        val privKey = secretKeyRing.getSecretKey.extractPrivateKey(JcePBESecretKeyDecryptorBuilder().build(pass))
-        val signerBuilder = JcaPGPContentSignerBuilder(secretKeyRing.getPublicKey().getAlgorithm, HashAlgorithmTags.SHA256)
-        val sGen = PGPSignatureGenerator(signerBuilder, secretKeyRing.getPublicKey())
-        sGen.init(PGPSignature.BINARY_DOCUMENT, privKey)
-        sGen
-      .flatMap: sGen =>
-        ZIO.attempt:
-          val builder = ChunkBuilder.make[Byte]()
-          val rawOut = ChunkBuilderOutputStream(builder)
-          val armor = ArmoredOutputStream(rawOut)
-          val bOut = BCPGOutputStream(armor)
-          sGen.update(toSign.toArray)
-          sGen.generate().encode(bOut)
-          bOut.close()
-          armor.close()
-          builder.result()
-        .mapError(signError)
-
-  val live: ZLayer[Sonatype, Nothing, Deployer[Sonatype]] =
+  private val signerLayer: ZLayer[Any, Nothing, MavenCentral.Signer] =
     ZLayer.fromZIO:
       defer:
         val gpgKey = ZIO.systemWith(_.env("OSS_GPG_KEY")).someOrFail(Throwable("OSS_GPG_KEY not set")).orDie.run
         val gpgPass = ZIO.systemWith(_.env("OSS_GPG_PASS")).orDie.run
-        val sonatype = ZIO.service[MavenCentral.Deploy.Sonatype].run
-        LiveDeployer(gpgKey, gpgPass, sonatype)
+        (gpgKey, gpgPass)
+    .flatMap: env =>
+      val (gpgKey, gpgPass) = env.get
+      MavenCentral.Signer.make(gpgKey, gpgPass).orDie
+
+  val live: ZLayer[Sonatype, Nothing, Deployer[Sonatype]] =
+    ZLayer.makeSome[Sonatype, Deployer[Sonatype]](
+      signerLayer,
+      ZLayer.fromFunction(LiveDeployer(_, _)),
+    )

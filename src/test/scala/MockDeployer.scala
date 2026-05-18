@@ -23,7 +23,9 @@ class MockDeployer(checkMavenCentral: Boolean = false) extends Deployer[Any]:
     ZIO.systemWith(_.env("OSS_GPG_KEY")).flatMap:
       case Some(gpgKey) =>
         ZIO.systemWith(_.env("OSS_GPG_PASS")).flatMap: maybeGpgPass =>
-          Deployer.ascSignWith(gpgKey, maybeGpgPass)(toSign).asSome
+          ZIO.scoped:
+            MavenCentral.Signer.make(gpgKey, maybeGpgPass).build.flatMap: env =>
+              env.get[MavenCentral.Signer].ascSign(toSign)
       case None =>
         ZIO.none
     .mapError(e => DeployJobError.PublishFailed(s"Signing failed: ${e.getMessage}"))

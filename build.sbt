@@ -30,7 +30,7 @@ libraryDependencies ++= Seq(
   "dev.zio" %% "zio-logging"            % "2.5.3",
   "dev.zio" %% "zio-direct"             % "1.0.0-RC7",
   "dev.zio" %% "zio-http"               % "3.11.1",
-  "com.jamesward" %% "zio-mavencentral" % "0.8.0",
+  "com.jamesward" %% "zio-mavencentral" % "0.8.3",
   // Previously transitive via zio-mavencentral <= 0.5.4; now declared
   // directly because zio-mavencentral dropped its zip dep.
   "dev.zio" %% "zio-streams-compress-zip" % "2.1.0",
@@ -42,12 +42,10 @@ libraryDependencies ++= Seq(
   "dev.zio" %% "zio-config"           % "4.0.7",
   "dev.zio" %% "zio-config-typesafe"  % "4.0.7",
 
-  "org.bouncycastle" % "bcpg-jdk18on" % "1.84",
-
   "org.webjars" % "webjars-locator-lite" % "1.1.3",
   "org.webjars.npm" % "tailwindcss__browser" % "4.2.1",
 
-  "org.slf4j" % "slf4j-simple" % "2.0.17",
+  "org.slf4j" % "slf4j-simple" % "2.0.18",
 
   "dev.zio" %% "zio-test"           % zioVersion % Test,
   "dev.zio" %% "zio-test-sbt"       % zioVersion % Test,
