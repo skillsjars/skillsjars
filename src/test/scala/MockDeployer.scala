@@ -1,5 +1,6 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
+import com.jamesward.zio_mavencentral.MavenCentral.MavenCentralRepo
 import zio.*
 import zio.http.Client
 
@@ -30,7 +31,7 @@ class MockDeployer(checkMavenCentral: Boolean = false) extends Deployer[Any]:
         ZIO.none
     .mapError(e => DeployJobError.PublishFailed(s"Signing failed: ${e.getMessage}"))
 
-  override def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[Client & Scope, Nothing, Boolean] =
+  override def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[MavenCentralRepo, Nothing, Boolean] =
     if checkMavenCentral then super.checkArtifactExists(groupId, artifactId, version)
     else ZIO.succeed(false)
 

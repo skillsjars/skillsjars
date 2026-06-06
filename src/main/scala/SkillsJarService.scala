@@ -1,6 +1,6 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
-import com.jamesward.zio_mavencentral.MavenCentral.retryOnServerError
+import com.jamesward.zio_mavencentral.MavenCentral.MavenCentralRepo
 import zio.*
 import zio.cache.*
 import zio.config.typesafe.TypesafeConfigProvider
@@ -29,10 +29,10 @@ object SkillsJarService:
       all.filter: sj =>
         sj.name.toLowerCase.contains(lower) || sj.description.toLowerCase.contains(lower)
 
-  def exists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[Client & Scope, Throwable, Boolean] =
+  def exists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[MavenCentralRepo, Throwable, Boolean] =
     MavenCentral.artifactExists(groupId, artifactId, version)
 
-  val cacheLayer: ZLayer[Client, Nothing, SkillsJarCache] =
+  val cacheLayer: ZLayer[Client & MavenCentralRepo, Nothing, SkillsJarCache] =
     ZLayer.fromZIO:
       Cache.makeWith(1, Lookup((_: String) => fetchAllSkillsJars.mapError(e => e))):
         case Exit.Success(_) => 1.hour
@@ -43,7 +43,7 @@ object SkillsJarService:
     ZIO.config(Models.skillsJarSourcesConfig)
       .withConfigProvider(TypesafeConfigProvider.fromResourcePath())
 
-  private def fetchAllSkillsJars: ZIO[Client, ServiceError, Seq[SkillsJar]] =
+  private def fetchAllSkillsJars: ZIO[Client & MavenCentralRepo, ServiceError, Seq[SkillsJar]] =
     ZIO.scoped:
       defer:
         val sources = loadSources.catchAll(e => ZIO.succeed(List(SkillsJarSource(Models.groupId, None, Nil, true)))).run
@@ -52,14 +52,16 @@ object SkillsJarService:
         .run
         allResults.flatten
 
-  private def fetchForSource(source: SkillsJarSource): ZIO[Client & Scope, Throwable, Seq[SkillsJar]] =
+  private def fetchForSource(source: SkillsJarSource): ZIO[Client & MavenCentralRepo & Scope, Throwable, Seq[SkillsJar]] =
     source.artifactId match
       case Some(aid) =>
         fetchSkillsJar(source.groupId, aid, source.securityScanned).map(Seq(_))
       case None =>
         defer:
+          // Mirror fallback + per-mirror circuit breakers in `MavenCentralRepo`
+          // replace the per-call `retryOnServerError` we used in 0.8.x — transient
+          // 5xx / 429 / 403 are now handled inside the repo layer.
           val entries = MavenCentral.searchArtifacts(source.groupId)
-            .retryOnServerError
             .map(_.value.filterNot(source.isExcluded))
             .catchAll(_ => ZIO.succeed(Seq.empty[MavenCentral.ArtifactId]))
             .run
@@ -77,13 +79,12 @@ object SkillsJarService:
         skillName -> e.text
     .toMap
 
-  private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, securityScanned: Boolean): ZIO[Client & Scope, Throwable, SkillsJar] =
+  private def fetchSkillsJar(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, securityScanned: Boolean): ZIO[Client & MavenCentralRepo & Scope, Throwable, SkillsJar] =
     defer:
       val versions = MavenCentral.searchVersions(groupId, artifactId)
-        .retryOnServerError
         .mapBoth(e => RuntimeException(s"Failed to fetch versions for $artifactId: $e"), _.value).run
       val nameDescAndTools = versions.headOption.fold(ZIO.succeed((artifactId.toString, "", Map.empty[String, String]))): latestVersion =>
-        MavenCentral.pom(groupId, artifactId, latestVersion).retryOnServerError.map: pomXml =>
+        MavenCentral.pom(groupId, artifactId, latestVersion).map: pomXml =>
           val n = (pomXml \ "name").text
           val d = (pomXml \ "description").text
           val tools = extractAllowedTools(pomXml)

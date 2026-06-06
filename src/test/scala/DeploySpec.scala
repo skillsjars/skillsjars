@@ -1,5 +1,6 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
+import com.jamesward.zio_mavencentral.MavenCentral.MavenCentralRepo
 import zio.*
 import zio.direct.*
 import zio.http.Client
@@ -10,7 +11,7 @@ import zio.stream.*
 
 object DeploySpec extends ZIOSpecDefault:
 
-  private def deploy(deployer: Deployer[Any], org: Org, repo: Repo): ZIO[Scope & Client, DeployError, Map[SkillName, SkillResult]] =
+  private def deploy(deployer: Deployer[Any], org: Org, repo: Repo): ZIO[Scope & Client & MavenCentralRepo, DeployError, Map[SkillName, SkillResult]] =
     defer:
       val repoInfo = GitService.cloneAndScan(org, repo).run
       val version = repoInfo.version
@@ -133,7 +134,7 @@ object DeploySpec extends ZIOSpecDefault:
             case Exit.Failure(c) => c.failureOption.exists { case DeployError(_, _, RepoErrorKind.NotFound) => true; case _ => false }
             case _ => false
           )
-      .provide(MockDeployer.layer, Client.default)
+      .provide(MockDeployer.layer, Client.default, MavenCentralRepo.live)
       ,
       test("publishes one artifact per skill"):
         // brittle - should be able to specify a commit id for consistency
@@ -172,7 +173,7 @@ object DeploySpec extends ZIOSpecDefault:
               skillsJar.keys.exists(_.endsWith("SKILL.md")),
               skillsJar.keys.exists(_.startsWith("META-INF/skills/anthropics/skills")),
             )
-      .provide(MockDeployer.layer, Client.default)
+      .provide(MockDeployer.layer, Client.default, MavenCentralRepo.live)
       ,
       test("publish with signing"):
         ZIO.scoped:
@@ -199,7 +200,7 @@ object DeploySpec extends ZIOSpecDefault:
               published.nonEmpty,
               files.exists(_.endsWith(".asc"))
             )
-      .provide(MockDeployer.layer, Client.default) @@ TestAspect.withLiveSystem @@ TestAspect.ifEnvSet("OSS_GPG_KEY")
+      .provide(MockDeployer.layer, Client.default, MavenCentralRepo.live) @@ TestAspect.withLiveSystem @@ TestAspect.ifEnvSet("OSS_GPG_KEY")
       ,
       test("repo-level license is used when skill has none"):
         ZIO.scoped:
@@ -230,7 +231,7 @@ object DeploySpec extends ZIOSpecDefault:
               licName == "MIT License",
               licUrl == "https://opensource.org/licenses/MIT",
             )
-      .provide(MockDeployer.layer, Client.default)
+      .provide(MockDeployer.layer, Client.default, MavenCentralRepo.live)
       ,
       test("publishes root-level SKILL.md as org__repo"):
         ZIO.scoped:
@@ -258,7 +259,7 @@ object DeploySpec extends ZIOSpecDefault:
               skillsJar.keys.exists(_.startsWith("META-INF/skills/jdubois/dr-jskill/")),
               !skillsJar.keys.exists(_.contains(".git")),
             )
-      .provide(MockDeployer.layer, Client.default)
+      .provide(MockDeployer.layer, Client.default, MavenCentralRepo.live)
       ,
       test("detects artifacts that already exist on Maven Central"):
         ZIO.scoped:
@@ -293,7 +294,7 @@ object DeploySpec extends ZIOSpecDefault:
               duplicates.exists(_ == SkillName("algorithmic-art")),
               duplicates.nonEmpty,
             )
-      .provide(MockDeployer.layerWithCheck, Client.default)
+      .provide(MockDeployer.layerWithCheck, Client.default, MavenCentralRepo.live)
     ),
     suite("artifactIdFor")(
       test("basic artifact id"):

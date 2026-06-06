@@ -1,6 +1,7 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
 import com.jamesward.zio_mavencentral.MavenCentral.Deploy.Sonatype
+import com.jamesward.zio_mavencentral.MavenCentral.MavenCentralRepo
 import zio.*
 import zio.direct.*
 import zio.http.Client
@@ -17,12 +18,12 @@ trait Deployer[Env]:
 
   def ascSign(toSign: Chunk[Byte]): IO[DeployJobError, Option[Chunk[Byte]]]
 
-  def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[Client & Scope, Nothing, Boolean] =
+  def checkArtifactExists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[MavenCentralRepo, Nothing, Boolean] =
     MavenCentral.artifactExists(groupId, artifactId, version)
       .catchAll(_ => ZIO.succeed(false))
 
   def validateSkill(org: Org, repo: Repo, version: MavenCentral.Version, location: SkillLocation,
-                    skillDir: File, repoLicenses: List[License]): ZIO[Client & Scope, SkillError, ValidatedSkill] =
+                    skillDir: File, repoLicenses: List[License]): ZIO[MavenCentralRepo, SkillError, ValidatedSkill] =
     defer:
       val skillFile = java.io.File(skillDir, "SKILL.md")
       val content = ZStream

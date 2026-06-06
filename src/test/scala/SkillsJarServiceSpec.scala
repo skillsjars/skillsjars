@@ -1,3 +1,4 @@
+import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
 import zio.direct.*
 import zio.http.*
@@ -18,5 +19,5 @@ object SkillsJarServiceSpec extends ZIOSpecDefault:
           groupIds.contains("com.skillsjars"),
           skillsJars.forall(sj => groupIds.contains(sj.groupId.toString)),
         )
-    .provide(SkillsJarService.cacheLayer, loggingClient)
+    .provide(SkillsJarService.cacheLayer, loggingClient, MavenCentral.MavenCentralRepo.live)
   ) @@ TestAspect.withLiveClock

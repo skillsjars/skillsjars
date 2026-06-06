@@ -1,3 +1,4 @@
+import com.jamesward.zio_mavencentral.MavenCentral
 import zio.*
 import zio.http.*
 
@@ -11,4 +12,5 @@ object TestApp extends ZIOAppDefault:
       SkillsJarService.cacheLayer,
       DeployJobs.live,
       HerokuInference.live.orElse(HerokuInferenceFake.layer),
+      MavenCentral.MavenCentralRepo.live,
     )

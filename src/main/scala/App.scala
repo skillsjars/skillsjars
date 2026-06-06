@@ -1,5 +1,6 @@
 import Models.*
 import com.jamesward.zio_mavencentral.MavenCentral
+import com.jamesward.zio_mavencentral.MavenCentral.MavenCentralRepo
 import zio.*
 import zio.direct.*
 import zio.http.*
@@ -13,7 +14,7 @@ object App extends ZIOAppDefault:
       Response.html(UI.index(skillsJars, maybeQuery, buildTool, tailwind))
 
 
-  private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[DeployJobs & Deployer[A] & A & Client & HerokuInference, Nothing, Response] =
+  private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[DeployJobs & Deployer[A] & A & Client & MavenCentralRepo & HerokuInference, Nothing, Response] =
     defer:
       val deployJobs = ZIO.service[DeployJobs].run
       val formResult = request.body.asURLEncodedForm.mapError(e => s"Invalid form: ${e.getMessage}").run
@@ -47,7 +48,7 @@ object App extends ZIOAppDefault:
         case None =>
           Response.html(UI.deployNotFound(org, repo, tailwind))
 
-  def appRoutes[A : Tag](webJars: WebJars): Routes[DeployJobs & Deployer[A] & A & SkillsJarCache & Client & HerokuInference, Nothing] =
+  def appRoutes[A : Tag](webJars: WebJars): Routes[DeployJobs & Deployer[A] & A & SkillsJarCache & Client & MavenCentralRepo & HerokuInference, Nothing] =
     val tailwind = webJars.url("tailwindcss__browser", "/dist/index.global.js")
 
     Routes(
@@ -81,6 +82,7 @@ object App extends ZIOAppDefault:
       serverLayer,
       loggingClient,
       MavenCentral.Deploy.Sonatype.Live,
+      MavenCentral.MavenCentralRepo.live,
       Deployer.live,
       SkillsJarService.cacheLayer,
       DeployJobs.live,
