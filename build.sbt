@@ -30,7 +30,7 @@ libraryDependencies ++= Seq(
   "dev.zio" %% "zio-logging"            % "2.5.3",
   "dev.zio" %% "zio-direct"             % "1.0.0-RC7",
   "dev.zio" %% "zio-http"               % "3.11.2",
-  "com.jamesward" %% "zio-mavencentral" % "0.10.0",
+  "com.jamesward" %% "zio-mavencentral" % "0.12.0",
   // Previously transitive via zio-mavencentral <= 0.5.4; now declared
   // directly because zio-mavencentral dropped its zip dep.
   "dev.zio" %% "zio-streams-compress-zip" % "2.1.3",
