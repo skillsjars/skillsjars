@@ -35,7 +35,7 @@ libraryDependencies ++= Seq(
   // directly because zio-mavencentral dropped its zip dep.
   "dev.zio" %% "zio-streams-compress-zip" % "2.1.3",
 
-  "org.eclipse.jgit" % "org.eclipse.jgit" % "7.6.0.202603022253-r",
+  "org.eclipse.jgit" % "org.eclipse.jgit" % "7.7.0.202606012155-r",
 
   "org.scala-lang.modules" %% "scala-xml" % "2.4.0",
   "org.virtuslab" %% "scala-yaml" % "0.3.1",
