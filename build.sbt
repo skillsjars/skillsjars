@@ -52,19 +52,4 @@ libraryDependencies ++= Seq(
   "dev.zio" %% "zio-test-magnolia"  % zioVersion % Test,
 )
 
-lazy val reStartTest =
-  inputKey[spray.revolver.AppProcess]("re-start, but test")
-
-reStartTest :=
-  Def.inputTask {
-    spray.revolver.Actions.restartApp(
-      streams.value,
-      reLogTag.value,
-      thisProjectRef.value,
-      reForkOptions.value,
-      Some("TestApp"),
-      (Test / fullClasspath).value,
-      reStartArgs.value,
-      spray.revolver.Actions.startArgsParser.parsed
-    )
-  }.dependsOn(Compile / products).evaluated
+Test / run / mainClass := Some("TestApp")
