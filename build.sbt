@@ -40,7 +40,7 @@ libraryDependencies ++= Seq(
   "org.scala-lang.modules" %% "scala-xml" % "2.4.0",
   "org.virtuslab" %% "scala-yaml" % "0.3.2",
   "dev.zio" %% "zio-config"           % "4.0.7",
-  "dev.zio" %% "zio-config-typesafe"  % "4.0.7",
+  "dev.zio" %% "zio-config-typesafe"  % "4.0.8",
 
   "org.webjars" % "webjars-locator-lite" % "1.1.4",
   "org.webjars.npm" % "tailwindcss__browser" % "4.3.2",
