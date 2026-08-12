@@ -33,7 +33,7 @@ libraryDependencies ++= Seq(
   "com.jamesward" %% "zio-mavencentral" % "0.12.0",
   // Previously transitive via zio-mavencentral <= 0.5.4; now declared
   // directly because zio-mavencentral dropped its zip dep.
-  "dev.zio" %% "zio-streams-compress-zip" % "2.1.3",
+  "dev.zio" %% "zio-streams-compress-zip" % "2.1.4",
 
   "org.eclipse.jgit" % "org.eclipse.jgit" % "7.7.1.202607240634-r",
 
