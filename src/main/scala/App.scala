@@ -7,11 +7,15 @@ import zio.http.*
 
 object App extends ZIOAppDefault:
 
+  private def acceptsMarkdown(request: Request): Boolean =
+    Markdown.accepts(request.headers.rawHeader("accept"))
+
   private def indexHandler(request: Request, buildTool: BuildTool, tailwind: URL): ZIO[SkillsJarCache, SkillsJarService.ServiceError, Response] =
     defer:
       val maybeQuery = request.queryParam("q").filter(_.nonEmpty)
       val skillsJars = maybeQuery.fold(SkillsJarService.list)(SkillsJarService.search).run
-      Response.html(UI.index(skillsJars, maybeQuery, buildTool, tailwind))
+      if acceptsMarkdown(request) then Markdown.response(Markdown.skillsList(skillsJars, maybeQuery))
+      else Response.html(UI.index(skillsJars, maybeQuery, buildTool, tailwind))
 
 
   private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[DeployJobs & Deployer[A] & A & Client & MavenCentralRepo & HerokuInference, Nothing, Response] =
@@ -55,8 +59,12 @@ object App extends ZIOAppDefault:
       Method.GET / Root -> Handler.fromFunctionZIO[Request]: request =>
         val buildTool = BuildTool.fromParam(request.queryParam("bt").getOrElse("maven"))
         indexHandler(request, buildTool, tailwind).catchAll: error =>
-          ZIO.succeed(Response.html(UI.index(Seq.empty, None, buildTool, tailwind, Some(error))))
+          if acceptsMarkdown(request) then
+            ZIO.succeed(Markdown.response(Markdown.skillsList(Seq.empty, None)))
+          else
+            ZIO.succeed(Response.html(UI.index(Seq.empty, None, buildTool, tailwind, Some(error))))
       ,
+      Method.GET / "setup" -> handler(Markdown.response(Markdown.setup)),
       Method.GET / "docs" -> handler(Response.html(UI.docs(tailwind))),
       Method.GET / "favicon.ico" -> Handler.fromResource("public/favicon.ico").orDie,
       Method.GET / "favicon.png" -> Handler.fromResource("public/favicon.png").orDie,

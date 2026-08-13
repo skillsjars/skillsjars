@@ -59,6 +59,7 @@ object UI:
       "SkillsJars",
       div(
         maybeError.map(errorCard).getOrElse(Dom.empty),
+        agentSetupBanner,
         searchForm(maybeQuery, buildTool),
         deployForm,
         buildToolSelector(buildTool, maybeQuery),
@@ -77,6 +78,30 @@ object UI:
       `class` := "mb-6 bg-red-50 border border-red-200 rounded-lg p-4",
       p(`class` := "font-semibold text-red-800", "Error"),
       p(`class` := "text-sm text-red-700 mt-1", message),
+    )
+
+  private val agentSetupBanner: Dom =
+    val prompt = "Setup SkillsJars in my project by following the instructions at: https://skillsjars.com/setup"
+    div(
+      `class` := "mb-6 bg-indigo-50 border border-indigo-200 rounded-lg p-4",
+      p(`class` := "font-semibold text-indigo-800 mb-1", "Set up SkillsJars in your AI agent"),
+      p(`class` := "text-sm text-indigo-700 mb-2",
+        "To set up SkillsJars in your project, paste the following into your AI coding agent:",
+      ),
+      div(
+        `class` := "relative",
+        pre(
+          id := "snippet-setup-prompt",
+          `class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap pr-16",
+          prompt,
+        ),
+        button(
+          `type` := "button",
+          Dom.attr("onclick", "copySnippet(this,'setup-prompt')"),
+          `class` := "absolute top-2 right-2 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50 cursor-pointer",
+          "Copy",
+        ),
+      ),
     )
 
   private def searchForm(maybeQuery: Option[String], buildTool: BuildTool): Dom =
@@ -307,6 +332,27 @@ object UI:
           )
         ),
 
+        // For AI Agents
+        div(
+          `class` := "bg-green-50 border border-green-200 rounded-lg p-4 mt-6",
+          p(`class` := "font-semibold text-green-800 mb-1", "For AI agents"),
+          p(`class` := "text-sm text-green-700 mb-2",
+            "If you are an AI coding agent setting SkillsJars up in a project, fetch the machine-readable setup guide. It detects the build tool, adds the extraction plugin, helps you pick skills, and sets up ",
+            code(`class` := "bg-green-100 px-1 rounded", "AGENTS.md"),
+            ":",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-2",
+            "curl -H \"Accept: text/markdown\" https://skillsjars.com/setup",
+          ),
+          p(`class` := "text-sm text-green-700",
+            "The skill catalog is also available as markdown — ",
+            code(`class` := "bg-green-100 px-1 rounded", "curl -H \"Accept: text/markdown\" https://skillsjars.com/"),
+            " (add ", code(`class` := "bg-green-100 px-1 rounded", "?q=keyword"), " to search). Or just open ",
+            a(href := "/setup", `class` := "text-blue-600 hover:underline", "/setup"),
+            " to read the guide.",
+          ),
+        ),
+
         // AI Code Assistants
         div(
           `class` := "bg-white rounded-lg shadow p-6 mt-6",
@@ -332,7 +378,7 @@ object UI:
                |        <plugin>
                |            <groupId>com.skillsjars</groupId>
                |            <artifactId>maven-plugin</artifactId>
-               |            <version>0.0.6</version>
+               |            <version>0.0.7</version>
                |            <dependencies>
                |                <!-- Your SkillsJars -->
                |                <dependency>
@@ -372,7 +418,9 @@ object UI:
             p(`class` := "font-semibold text-blue-800 mb-1", "Tip: AGENTS.md"),
             p(`class` := "text-sm text-blue-700",
               "Your project's ", code(`class` := "bg-blue-100 px-1 rounded", "AGENTS.md"),
-              " can instruct AI agents to run the extraction command before working with the project. This way, skills are always available without manual setup.",
+              " can instruct AI agents to run the extraction command before working with the project. This way, skills are always available without manual setup. The ",
+              a(href := "/setup", `class` := "text-blue-600 hover:underline", "setup guide"),
+              " includes a ready-to-paste ", code(`class` := "bg-blue-100 px-1 rounded", "AGENTS.md"), " snippet.",
             ),
           ),
         ),
@@ -529,7 +577,7 @@ object UI:
                |        <plugin>
                |            <groupId>com.skillsjars</groupId>
                |            <artifactId>maven-plugin</artifactId>
-               |            <version>0.0.6</version>
+               |            <version>0.0.7</version>
                |            <executions>
                |                <execution>
                |                    <goals>
