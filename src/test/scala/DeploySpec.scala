@@ -226,7 +226,7 @@ object DeploySpec extends ZIOSpecDefault:
             val licUrl = (pom \ "licenses" \ "license" \ "url").text
 
             assertTrue(
-              published.size == 1,
+              published.contains(SkillName("jdb-debugger")),
               skipped.isEmpty,
               licName == "MIT License",
               licUrl == "https://opensource.org/licenses/MIT",
