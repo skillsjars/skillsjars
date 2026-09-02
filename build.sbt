@@ -17,7 +17,7 @@ scalacOptions ++= Seq(
   // "-Xfatal-warnings", // doesn't seem to work anymore
 )
 
-scalaVersion := "3.8.4"
+scalaVersion := "3.9.0"
 
 Test / fork := true
 
