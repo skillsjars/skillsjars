@@ -45,7 +45,7 @@ libraryDependencies ++= Seq(
   "org.webjars" % "webjars-locator-lite" % "1.1.4",
   "org.webjars.npm" % "tailwindcss__browser" % "4.3.3",
 
-  "org.slf4j" % "slf4j-simple" % "2.0.18",
+  "org.slf4j" % "slf4j-simple" % "2.0.19",
 
   "dev.zio" %% "zio-test"           % zioVersion % Test,
   "dev.zio" %% "zio-test-sbt"       % zioVersion % Test,
