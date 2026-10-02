@@ -58,3 +58,8 @@ Test / run / mainClass := Some("TestApp")
 // Declared in the plugin's `Skills` config so they stay off the compile/runtime classpath.
 skillsJarsOutputDir := Some(file(".kiro/skills"))
 libraryDependencies += "com.jamesward" % "skills" % "0.0.4" % Skills
+
+// sbt-mcp (loopback-only: its tools can execute build tasks)
+Global / mcpEnabled := true
+Global / mcpHost := "127.0.0.1"
+Global / mcpPort := 5112

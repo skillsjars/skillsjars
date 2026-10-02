@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "sbt-mcp-skillsjars": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        ".claude/sbt-mcp-stdio.sh"
+      ],
+      "timeout": 1800000
+    }
+  }
+}
