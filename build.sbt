@@ -60,6 +60,6 @@ skillsJarsOutputDir := Some(file(".kiro/skills"))
 libraryDependencies += "com.jamesward" % "skills" % "0.0.12" % Skills
 
 // sbt-mcp (loopback-only: its tools can execute build tasks)
-Global / mcpEnabled := true
-Global / mcpHost := "127.0.0.1"
-Global / mcpPort := 5112
+ThisBuild / mcpEnabled := true
+ThisBuild / mcpHost := "127.0.0.1"
+ThisBuild / mcpPort := 5112
