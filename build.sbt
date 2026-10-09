@@ -17,7 +17,7 @@ scalacOptions ++= Seq(
   // "-Xfatal-warnings", // doesn't seem to work anymore
 )
 
-scalaVersion := "3.9.0"
+scalaVersion := "3.10.0"
 
 Test / fork := true
 
@@ -30,7 +30,7 @@ libraryDependencies ++= Seq(
   "dev.zio" %% "zio-logging"            % "2.5.3",
   "dev.zio" %% "zio-direct"             % "1.0.0-RC7",
   "dev.zio" %% "zio-http"               % "3.11.6",
-  "com.jamesward" %% "zio-mavencentral" % "0.14.0",
+  "com.jamesward" %% "zio-mavencentral" % "0.14.1",
   // Previously transitive via zio-mavencentral <= 0.5.4; now declared
   // directly because zio-mavencentral dropped its zip dep.
   "dev.zio" %% "zio-streams-compress-zip" % "2.1.5",
@@ -57,7 +57,7 @@ Test / run / mainClass := Some("TestApp")
 // SkillsJars — Agent Skills unpacked onto the filesystem (see AGENTS.md).
 // Declared in the plugin's `Skills` config so they stay off the compile/runtime classpath.
 skillsJarsOutputDir := Some(file(".kiro/skills"))
-libraryDependencies += "com.jamesward" % "skills" % "0.0.4" % Skills
+libraryDependencies += "com.jamesward" % "skills" % "0.0.12" % Skills
 
 // sbt-mcp (loopback-only: its tools can execute build tasks)
 Global / mcpEnabled := true
