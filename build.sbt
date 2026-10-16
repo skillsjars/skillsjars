@@ -21,7 +21,7 @@ scalaVersion := "3.10.0"
 
 Test / fork := true
 
-val zioVersion = "2.1.26"
+val zioVersion = "2.1.27"
 
 libraryDependencies ++= Seq(
   "dev.zio" %% "zio"                    % zioVersion,
@@ -57,7 +57,7 @@ Test / run / mainClass := Some("TestApp")
 // SkillsJars — Agent Skills unpacked onto the filesystem (see AGENTS.md).
 // Declared in the plugin's `Skills` config so they stay off the compile/runtime classpath.
 skillsJarsOutputDir := Some(file(".kiro/skills"))
-libraryDependencies += "com.jamesward" % "skills" % "0.0.12" % Skills
+libraryDependencies += "com.jamesward" % "skills" % "0.0.15" % Skills
 
 // sbt-mcp (loopback-only: its tools can execute build tasks)
 ThisBuild / mcpEnabled := true
