@@ -16,4 +16,4 @@ jobs:
         cache: 'sbt'
 
     - run: |
-        ./sbt test
+        ./sbta test

@@ -92,10 +92,10 @@ org.eclipse.jgit
 
 Start an auto-reloading dev server:
 ```
-./sbt ~reStartTest
+./sbta ~reStartTest
 ```
 
 Run tests:
 ```
-./sbt test
+./sbta test
 ```

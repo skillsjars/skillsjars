@@ -59,7 +59,3 @@ Test / run / mainClass := Some("TestApp")
 skillsJarsOutputDir := Some(file(".kiro/skills"))
 libraryDependencies += "com.jamesward" % "skills" % "0.0.15" % Skills
 
-// sbt-mcp (loopback-only: its tools can execute build tasks)
-ThisBuild / mcpEnabled := true
-ThisBuild / mcpHost := "127.0.0.1"
-ThisBuild / mcpPort := 5112
