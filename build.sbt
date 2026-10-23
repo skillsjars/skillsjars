@@ -57,5 +57,5 @@ Test / run / mainClass := Some("TestApp")
 // SkillsJars — Agent Skills unpacked onto the filesystem (see AGENTS.md).
 // Declared in the plugin's `Skills` config so they stay off the compile/runtime classpath.
 skillsJarsOutputDir := Some(file(".kiro/skills"))
-libraryDependencies += "com.jamesward" % "skills" % "0.0.15" % Skills
+libraryDependencies += "com.jamesward" % "skills" % "0.0.17" % Skills
 
