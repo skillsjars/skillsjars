@@ -30,10 +30,10 @@ libraryDependencies ++= Seq(
   "dev.zio" %% "zio-logging"            % "2.5.3",
   "dev.zio" %% "zio-direct"             % "1.0.0-RC7",
   "dev.zio" %% "zio-http"               % "3.11.6",
-  "com.jamesward" %% "zio-mavencentral" % "0.14.1",
+  "com.jamesward" %% "zio-mavencentral" % "0.15.0",
   // Previously transitive via zio-mavencentral <= 0.5.4; now declared
   // directly because zio-mavencentral dropped its zip dep.
-  "dev.zio" %% "zio-streams-compress-zip" % "2.1.5",
+  "dev.zio" %% "zio-streams-compress-zip" % "2.1.7",
 
   "org.eclipse.jgit" % "org.eclipse.jgit" % "7.8.0.202609011348-r",
 
@@ -57,5 +57,5 @@ Test / run / mainClass := Some("TestApp")
 // SkillsJars — Agent Skills unpacked onto the filesystem (see AGENTS.md).
 // Declared in the plugin's `Skills` config so they stay off the compile/runtime classpath.
 skillsJarsOutputDir := Some(file(".kiro/skills"))
-libraryDependencies += "com.jamesward" % "skills" % "0.0.17" % Skills
+libraryDependencies += "com.jamesward" % "skills" % "0.0.19" % Skills
 
