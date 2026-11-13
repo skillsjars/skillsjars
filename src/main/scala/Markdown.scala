@@ -7,11 +7,6 @@ import zio.http.*
   */
 object Markdown:
 
-  // Single source of truth for the current SkillsJars build-plugin versions.
-  private val gradlePluginVersion = "0.0.2"
-  private val mavenPluginVersion = "0.0.7"
-  private val sbtPluginVersion = "0.0.9"
-
   private val siteUrl = "https://skillsjars.com"
 
   val mediaType: MediaType = MediaType("text", "markdown")
@@ -65,7 +60,7 @@ object Markdown:
     s"$header\n$intro\n$body"
 
   /** Instructions for an AI agent to set SkillsJars up in the current project. */
-  val setup: String =
+  def setup(versions: PluginVersions): String =
     s"""|# Setting up SkillsJars in your project
         |
         |SkillsJars packages [Agent Skills](https://agentskills.io/) as JARs on Maven Central
@@ -97,7 +92,7 @@ object Markdown:
         |        <plugin>
         |            <groupId>com.skillsjars</groupId>
         |            <artifactId>maven-plugin</artifactId>
-        |            <version>$mavenPluginVersion</version>
+        |            <version>${versions.maven}</version>
         |            <dependencies>
         |                <!-- SkillsJar dependencies (see step 3) -->
         |                <dependency>
@@ -120,7 +115,7 @@ object Markdown:
         |
         |```kotlin
         |plugins {
-        |    id("com.skillsjars.gradle-plugin") version "$gradlePluginVersion"
+        |    id("com.skillsjars.gradle-plugin") version "${versions.gradle}"
         |}
         |
         |dependencies {
@@ -134,7 +129,7 @@ object Markdown:
         |Add the plugin to `project/plugins.sbt`:
         |
         |```scala
-        |addSbtPlugin("com.skillsjars" % "skillsjars-sbt-plugin" % "$sbtPluginVersion")
+        |addSbtPlugin("com.skillsjars" % "skillsjars-sbt-plugin" % "${versions.sbt}")
         |```
         |
         |Then, in `build.sbt`, set an output directory and declare SkillsJar dependencies in the
@@ -149,8 +144,8 @@ object Markdown:
         |
         |### Finding the latest plugin (or any library) version
         |
-        |The plugin versions above were current when this guide was written. To resolve the latest
-        |version of any Maven Central artifact, request `javadocs.dev` — it returns JSON like
+        |The plugin versions above are the latest releases on Maven Central, checked hourly. To resolve
+        |the latest version of any Maven Central artifact, request `javadocs.dev` — it returns JSON like
         |`{"version":"0.4.0"}`:
         |
         |```bash

@@ -57,14 +57,14 @@ object App extends ZIOAppDefault:
         case None =>
           Response.html(UI.deployNotFound(org, repo, tailwind))
 
-  def appRoutes[A : Tag](webJars: WebJars): Routes[DeployJobs & Deployer[A] & A & SkillsJarCache & Client & MavenCentralRepo & HerokuInference, Nothing] =
+  def appRoutes[A : Tag](webJars: WebJars): Routes[DeployJobs & Deployer[A] & A & SkillsJarCache & PluginVersions.Latest & Client & MavenCentralRepo & HerokuInference, Nothing] =
     val tailwind = webJars.url("tailwindcss__browser", "/dist/index.global.js")
 
     Routes(
       Endpoints.search(tailwind).implement(searchHandler),
       Endpoints.latest.implement(latestHandler),
-      Method.GET / "setup" -> handler(Markdown.response(Markdown.setup)),
-      Method.GET / "docs" -> handler(Response.html(UI.docs(tailwind))),
+      Method.GET / "setup" -> handler(PluginVersions.get.map(versions => Markdown.response(Markdown.setup(versions)))),
+      Method.GET / "docs" -> handler(PluginVersions.get.map(versions => Response.html(UI.docs(tailwind, versions)))),
       Method.GET / "favicon.ico" -> Handler.fromResource("public/favicon.ico").orDie,
       Method.GET / "favicon.png" -> Handler.fromResource("public/favicon.png").orDie,
       Method.POST / "deploy" -> Handler.fromFunctionZIO[Request]: request =>
@@ -85,13 +85,16 @@ object App extends ZIOAppDefault:
     Client.default.map(env => ZEnvironment(env.get[Client] @@ ZClientAspect.requestLogging()))
 
   def run =
-    Server.serve(appRoutes[MavenCentral.Deploy.Sonatype](WebJarsLive())).provide(
+    Server.serve(appRoutes[MavenCentral.Deploy.Sonatype](WebJarsLive()) ++ SkillsMcp.routes).provide(
       serverLayer,
       loggingClient,
       MavenCentral.Deploy.Sonatype.Live,
       MavenCentral.MavenCentralRepo.live,
       Deployer.live,
       SkillsJarService.cacheLayer,
+      JarFetcher.live,
+      SkillsMcp.layer,
+      PluginVersions.live,
       DeployJobs.live,
       HerokuInference.live,
     )

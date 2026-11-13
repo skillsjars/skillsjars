@@ -58,12 +58,12 @@ object MarkdownSpec extends ZIOSpecDefault:
     ),
     suite("setup")(
       test("covers all three build tools, dependency selection, and AGENTS.md"):
-        val md = Markdown.setup
+        val md = Markdown.setup(PluginVersions(MavenCentral.Version("1.2.3"), MavenCentral.Version("4.5.6"), MavenCentral.Version("7.8.9")))
         assertTrue(
-          md.contains("id(\"com.skillsjars.gradle-plugin\") version \"0.0.2\""),
+          md.contains("id(\"com.skillsjars.gradle-plugin\") version \"4.5.6\""),
           md.contains("<artifactId>maven-plugin</artifactId>"),
-          md.contains("<version>0.0.7</version>"),
-          md.contains("addSbtPlugin(\"com.skillsjars\" % \"skillsjars-sbt-plugin\" % \"0.0.9\")"),
+          md.contains("<version>1.2.3</version>"),
+          md.contains("addSbtPlugin(\"com.skillsjars\" % \"skillsjars-sbt-plugin\" % \"7.8.9\")"),
           md.contains("./mvnw skillsjars:extract -Ddir="),
           md.contains("./gradlew extractSkillsJars -Pdir="),
           md.contains("./sbt extractSkillsJars"),
@@ -119,11 +119,10 @@ object MarkdownSpec extends ZIOSpecDefault:
           val response = routes.runZIO(Request.get(URL.decode("/docs").toOption.get)).run
           val body = response.body.asString.run
           assertTrue(
-            body.contains("0.0.7"),
-            !body.contains("0.0.6"),
+            body.contains(s"&lt;version&gt;${PluginVersions.fallback.maven}&lt;/version&gt;"),
             body.contains("For AI agents"),
             body.contains("/setup"),
             body.contains("Accept: text/markdown"),
           )
-    ).provide(MockDeployer.layer, fakeCacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live)
+    ).provide(MockDeployer.layer, fakeCacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live, PluginVersions.fixed(PluginVersions.fallback))
   )

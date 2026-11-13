@@ -21,7 +21,7 @@ object DeployHandlerSpec extends ZIOSpecDefault:
           !bodyString.contains("Missing org parameter"),
           !bodyString.contains("Missing repo parameter"),
         )
-    .provide(MockDeployer.layer, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live)
+    .provide(MockDeployer.layer, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live, PluginVersions.fixed(PluginVersions.fallback))
     ,
     test("deploy of existing artifacts shows duplicate versions"):
       val body = Body.fromURLEncodedForm(Form(
@@ -44,5 +44,5 @@ object DeployHandlerSpec extends ZIOSpecDefault:
           bodyString.contains("Already published"),
           bodyString.contains("algorithmic-art"),
         )
-    .provide(MockDeployer.layerWithCheck, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live)
+    .provide(MockDeployer.layerWithCheck, SkillsJarService.cacheLayer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live, PluginVersions.fixed(PluginVersions.fallback))
   ) @@ TestAspect.withLiveClock

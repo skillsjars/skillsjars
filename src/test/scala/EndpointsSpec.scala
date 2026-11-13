@@ -42,6 +42,9 @@ object EndpointsSpec extends ZIOSpecDefault:
       val body = response.body.asString.run
       (response, body)
 
+  private def panelTag(html: String, tool: String): Option[String] =
+    s"""<div[^>]*id="build-tool-panel-$tool"[^>]*>""".r.findFirstIn(html)
+
   private def contentType(response: Response): Option[String] =
     response.headers.rawHeader("content-type")
 
@@ -78,6 +81,43 @@ object EndpointsSpec extends ZIOSpecDefault:
             body.contains("runtimeOnly("),
           )
       ,
+      test("the HTML page and docs offer build-driven and MCP setup, with a tab per agent in order"):
+        defer:
+          val (_, index) = get("/", Some("text/html")).run
+          val (_, docs) = get("/docs", Some("text/html")).run
+          val agents = List("Claude Code", "Codex", "Cursor", "GitHub Copilot", "Gemini CLI", "Kiro", "Devin Desktop", "OpenCode", "Cline")
+          val positions = agents.map(agent => index.indexOf(s">$agent</button>"))
+          assertTrue(
+            index.contains("Option 1: Build-driven"),
+            index.contains("Option 2: MCP"),
+            positions.forall(_ >= 0),
+            positions == positions.sorted,
+            index.contains(s"claude mcp add --transport http skillsjars ${UI.mcpUrl}"),
+            docs.contains("Skills over MCP"),
+            docs.contains(s"kiro-cli mcp add --name skillsjars --url ${UI.mcpUrl}"),
+          )
+      ,
+      test("the docs explain the sbt plugin"):
+        defer:
+          val (_, docs) = get("/docs", Some("text/html")).run
+          assertTrue(
+            docs.contains(s"addSbtPlugin(&quot;com.skillsjars&quot; % &quot;skillsjars-sbt-plugin&quot; % &quot;${PluginVersions.fallback.sbt}&quot;)"),
+            docs.contains("skillsJarsOutputDir"),
+            docs.contains("sbt extractSkillsJars"),
+          )
+      ,
+      test("the docs put each build tool in a tab, Maven first and selected"):
+        defer:
+          val (_, docs) = get("/docs", Some("text/html")).run
+          val positions = List("Maven", "Gradle", "sbt").map(tool => docs.indexOf(s">$tool</button>"))
+          assertTrue(
+            positions.forall(_ >= 0),
+            positions == positions.sorted,
+            panelTag(docs, "maven").exists(!_.contains("hidden")),
+            panelTag(docs, "gradle").exists(_.contains("hidden")),
+            panelTag(docs, "sbt").exists(_.contains("hidden")),
+          )
+      ,
       // zio-http's Endpoint default when the header is absent; browsers and curl always send one.
       test("no Accept header gets JSON"):
         defer:
@@ -108,7 +148,7 @@ object EndpointsSpec extends ZIOSpecDefault:
             !body.contains("DecodeError"),
           )
       ,
-    ).provide(fakeCacheLayer, MockDeployer.layer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live),
+    ).provide(fakeCacheLayer, MockDeployer.layer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live, PluginVersions.fixed(PluginVersions.fallback)),
     suite("search failure")(
       test("JSON clients get a 502 with a JSON error"):
         defer:
@@ -127,7 +167,7 @@ object EndpointsSpec extends ZIOSpecDefault:
             body.contains("Failed to fetch SkillsJars"),
           )
       ,
-    ).provide(failingCacheLayer, MockDeployer.layer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live),
+    ).provide(failingCacheLayer, MockDeployer.layer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live, PluginVersions.fixed(PluginVersions.fallback)),
     suite("latest")(
       test("returns the latest version as JSON"):
         defer:
@@ -146,7 +186,7 @@ object EndpointsSpec extends ZIOSpecDefault:
             body == """{"error":"No SkillsJar found for com.skillsjars:nope"}""",
           )
       ,
-    ).provide(fakeCacheLayer, MockDeployer.layer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live),
+    ).provide(fakeCacheLayer, MockDeployer.layer, Client.default, Scope.default, DeployJobs.live, HerokuInferenceFake.layer, MavenCentral.MavenCentralRepo.live, PluginVersions.fixed(PluginVersions.fallback)),
     suite("latestOf")(
       test("picks the head version of the matching SkillsJar"):
         assertTrue(

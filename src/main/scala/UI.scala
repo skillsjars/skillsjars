@@ -46,6 +46,7 @@ object UI:
             p(`class` := "text-gray-600 mt-1", "Agent Skills on Maven Central"),
           ),
           pageContent,
+          pageScript,
           footer(
             `class` := "mt-12 pt-6 border-t border-gray-200 text-gray-500 text-sm",
             a(href := "https://github.com/skillsjars/skillsjars", "github.com/skillsjars/skillsjars"),
@@ -80,29 +81,247 @@ object UI:
       p(`class` := "text-sm text-red-700 mt-1", message),
     )
 
-  private val agentSetupBanner: Dom =
+  private lazy val agentSetupBanner: Dom =
     val prompt = "Setup SkillsJars in my project by following the instructions at: https://skillsjars.com/setup"
     div(
       `class` := "mb-6 bg-indigo-50 border border-indigo-200 rounded-lg p-4",
-      p(`class` := "font-semibold text-indigo-800 mb-1", "Set up SkillsJars in your AI agent"),
+      p(`class` := "font-semibold text-indigo-800 mb-3", "Set up SkillsJars in your AI agent"),
+      p(`class` := "text-sm font-semibold text-indigo-800 mb-1", "Option 1: Build-driven"),
       p(`class` := "text-sm text-indigo-700 mb-2",
-        "To set up SkillsJars in your project, paste the following into your AI coding agent:",
+        "Declare SkillsJars as dependencies in your build, which extracts them for your agent. Paste the following into your AI coding agent:",
       ),
-      div(
-        `class` := "relative",
-        pre(
-          id := "snippet-setup-prompt",
-          `class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap pr-16",
-          prompt,
-        ),
-        button(
-          `type` := "button",
-          Dom.attr("onclick", "copySnippet(this,'setup-prompt')"),
-          `class` := "absolute top-2 right-2 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50 cursor-pointer",
-          "Copy",
-        ),
+      copyBlock("setup-prompt", prompt),
+      p(`class` := "text-sm font-semibold text-indigo-800 mt-4 mb-1", "Option 2: MCP"),
+      p(`class` := "text-sm text-indigo-700 mb-2",
+        "Connect your agent to the SkillsJars MCP server, which serves the latest version of every SkillsJar as Skills over MCP. Use this with agents that support Skills over MCP.",
+      ),
+      mcpSetupTabs,
+    )
+
+  /** A `pre` with a Copy button; `id` must be unique on the page. */
+  private def copyBlock(id0: String, text: String): Dom =
+    div(
+      `class` := "relative",
+      pre(
+        id := s"snippet-$id0",
+        `class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap pr-16",
+        text,
+      ),
+      button(
+        `type` := "button",
+        Dom.attr("onclick", s"copyText(this,'snippet-$id0')"),
+        `class` := "absolute top-2 right-2 px-2 py-1 bg-white border border-gray-300 rounded text-xs text-gray-600 hover:bg-gray-50 cursor-pointer",
+        "Copy",
       ),
     )
+
+  val mcpUrl = "https://www.skillsjars.com/mcp"
+
+  private final case class McpClientSetup(id: String, label: String, setup: String, note: Option[String] = None)
+
+  private lazy val mcpClients: List[McpClientSetup] = List(
+    McpClientSetup("claude-code", "Claude Code", s"claude mcp add --transport http skillsjars $mcpUrl"),
+    McpClientSetup("codex", "Codex", s"codex mcp add skillsjars --url $mcpUrl"),
+    McpClientSetup("cursor", "Cursor",
+      s"""|{
+          |  "mcpServers": {
+          |    "skillsjars": {
+          |      "url": "$mcpUrl"
+          |    }
+          |  }
+          |}""".stripMargin,
+      Some("Add to .cursor/mcp.json in your project, or ~/.cursor/mcp.json for all projects."),
+    ),
+    McpClientSetup("copilot", "GitHub Copilot",
+      s"""code --add-mcp '{"name":"skillsjars","type":"http","url":"$mcpUrl"}'""",
+      Some("Adds the server to VS Code for GitHub Copilot's agent mode."),
+    ),
+    McpClientSetup("gemini-cli", "Gemini CLI", s"gemini mcp add --transport http skillsjars $mcpUrl"),
+    McpClientSetup("kiro", "Kiro", s"kiro-cli mcp add --name skillsjars --url $mcpUrl"),
+    McpClientSetup("devin-desktop", "Devin Desktop",
+      s"""|{
+          |  "mcpServers": {
+          |    "skillsjars": {
+          |      "url": "$mcpUrl",
+          |      "transport": "http"
+          |    }
+          |  }
+          |}""".stripMargin,
+      Some("Formerly Windsurf. Add to .devin/mcp_config.json in your project, or ~/.config/devin/mcp_config.json for all projects."),
+    ),
+    McpClientSetup("opencode", "OpenCode",
+      s"""|{
+          |  "$$schema": "https://opencode.ai/config.json",
+          |  "mcp": {
+          |    "skillsjars": {
+          |      "type": "remote",
+          |      "url": "$mcpUrl"
+          |    }
+          |  }
+          |}""".stripMargin,
+      Some("Add to opencode.json in your project, or ~/.config/opencode/opencode.json for all projects."),
+    ),
+    McpClientSetup("cline", "Cline",
+      s"""|{
+          |  "mcpServers": {
+          |    "skillsjars": {
+          |      "type": "streamableHttp",
+          |      "url": "$mcpUrl"
+          |    }
+          |  }
+          |}""".stripMargin,
+      Some("In the Cline panel, open MCP Servers, then Configure MCP Servers, and add this to cline_mcp_settings.json."),
+    ),
+  )
+
+  private val activeTab = "px-3 py-1.5 rounded-md text-sm font-medium bg-white text-gray-900 shadow cursor-pointer"
+  private val inactiveTab = "px-3 py-1.5 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900 cursor-pointer"
+
+  private final case class Tab(id: String, label: String, content: Dom)
+
+  /** A tab bar over `tabs`, the first selected; `group` must be unique on the page. */
+  private def tabs(group: String, tabs: List[Tab]): Dom =
+    div(
+      div(
+        `class` := "flex flex-wrap gap-1 bg-gray-200 rounded-lg p-1 mb-2",
+        Dom.attr("role", "tablist"),
+        tabs.zipWithIndex.map: (tab, i) =>
+          button(
+            `type` := "button",
+            id := s"$group-tab-${tab.id}",
+            Dom.attr("role", "tab"),
+            Dom.attr("aria-selected", (i == 0).toString),
+            Dom.attr("data-tab-group", group),
+            Dom.attr("data-tab", tab.id),
+            Dom.attr("onclick", s"selectTab('$group','${tab.id}')"),
+            `class` := (if i == 0 then activeTab else inactiveTab),
+            tab.label,
+          ),
+      ),
+      tabs.zipWithIndex.map: (tab, i) =>
+        div(
+          id := s"$group-panel-${tab.id}",
+          Dom.attr("role", "tabpanel"),
+          Dom.attr("data-panel-group", group),
+          Dom.attr("data-panel", tab.id),
+          `class` := (if i == 0 then "" else "hidden"),
+          tab.content,
+        ),
+    )
+
+  /** `selectTab` for [[tabs]] and `copyText` for [[copyBlock]], once per page. */
+  private val pageScript: Dom =
+    script.inlineJs(
+      s"""
+         |function selectTab(group, id) {
+         |  document.querySelectorAll('[data-tab-group="' + group + '"]').forEach(function(t) {
+         |    var on = t.getAttribute('data-tab') === id;
+         |    t.className = on ? '$activeTab' : '$inactiveTab';
+         |    t.setAttribute('aria-selected', on ? 'true' : 'false');
+         |  });
+         |  document.querySelectorAll('[data-panel-group="' + group + '"]').forEach(function(p) {
+         |    p.classList.toggle('hidden', p.getAttribute('data-panel') !== id);
+         |  });
+         |}
+         |function copyText(btn, id) {
+         |  var el = document.getElementById(id);
+         |  if (!el) return;
+         |  navigator.clipboard.writeText(el.textContent).then(function() {
+         |    var orig = btn.textContent;
+         |    btn.textContent = 'Copied!';
+         |    setTimeout(function() { btn.textContent = orig; }, 2000);
+         |  });
+         |}
+      """.stripMargin
+    )
+
+  /** One tab per agent with the command that adds the SkillsJars MCP server. */
+  private lazy val mcpSetupTabs: Dom =
+    tabs("mcp", mcpClients.map: client =>
+      Tab(client.id, client.label, div(
+        copyBlock(s"mcp-${client.id}", client.setup),
+        client.note.fold(Dom.empty)(note => p(`class` := "text-xs text-gray-500 mt-1", note)),
+      ))
+    )
+
+  private val codeInline = "bg-gray-100 px-1 rounded"
+  private val codeBlock = "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4"
+  private val step = "font-semibold text-gray-800 mb-2"
+
+  /** The extraction steps for each build tool, Maven first. */
+  private def buildToolTabs(versions: PluginVersions): Dom =
+    val browse: Dom = span("Browse Agent Skills on ", a(href := "/", `class` := "text-blue-600 hover:underline", "SkillsJars.com"), " and copy the dependency snippet for your build tool. ")
+    tabs("build-tool", List(
+      Tab("maven", "Maven", div(
+        p(`class` := step, "1. Add the extraction plugin"),
+        p(`class` := "text-gray-700 mb-1", "In ", code(`class` := codeInline, "pom.xml"), ":"),
+        pre(`class` := codeBlock,
+          s"""|<build>
+              |    <plugins>
+              |        <plugin>
+              |            <groupId>com.skillsjars</groupId>
+              |            <artifactId>maven-plugin</artifactId>
+              |            <version>${versions.maven}</version>
+              |            <dependencies>
+              |                <!-- Your SkillsJars -->
+              |                <dependency>
+              |                    <groupId>com.skillsjars</groupId>
+              |                    <artifactId>SKILLJAR_ARTIFACT_ID</artifactId>
+              |                    <version>SKILLJAR_VERSION</version>
+              |                </dependency>
+              |            </dependencies>
+              |        </plugin>
+              |    </plugins>
+              |</build>""".stripMargin,
+        ),
+        p(`class` := step, "2. Add SkillsJar dependencies"),
+        p(`class` := "text-gray-700 mb-4", browse,
+          "Add them inside the plugin's ", code(`class` := codeInline, "<dependencies>"), ", which keeps them off your project's classpath."),
+        p(`class` := step, "3. Extract skills"),
+        p(`class` := "text-gray-700 mb-1", "Run the extraction, specifying the directory your AI assistant expects:"),
+        pre(`class` := codeBlock, "./mvnw skillsjars:extract -Ddir=.kiro/skills"),
+      )),
+      Tab("gradle", "Gradle", div(
+        p(`class` := step, "1. Add the extraction plugin"),
+        p(`class` := "text-gray-700 mb-1", "In ", code(`class` := codeInline, "build.gradle.kts"), ":"),
+        pre(`class` := codeBlock,
+          s"""|plugins {
+              |    id("com.skillsjars.gradle-plugin") version "${versions.gradle}"
+              |}""".stripMargin,
+        ),
+        p(`class` := step, "2. Add SkillsJar dependencies"),
+        p(`class` := "text-gray-700 mb-1", browse,
+          "Declare them in a configuration such as ", code(`class` := codeInline, "testRuntimeOnly"), ", which keeps them off your main runtime classpath:"),
+        pre(`class` := codeBlock,
+          """|dependencies {
+             |    testRuntimeOnly("com.skillsjars:SKILLJAR_ARTIFACT_ID:SKILLJAR_VERSION")
+             |}""".stripMargin,
+        ),
+        p(`class` := step, "3. Extract skills"),
+        p(`class` := "text-gray-700 mb-1", "Run the extraction, specifying the directory your AI assistant expects:"),
+        pre(`class` := codeBlock, "./gradlew extractSkillsJars -Pdir=.kiro/skills"),
+      )),
+      Tab("sbt", "sbt", div(
+        p(`class` := step, "1. Add the extraction plugin"),
+        p(`class` := "text-gray-700 mb-1", "In ", code(`class` := codeInline, "project/plugins.sbt"), ":"),
+        pre(`class` := codeBlock,
+          s"""addSbtPlugin("com.skillsjars" % "skillsjars-sbt-plugin" % "${versions.sbt}")""",
+        ),
+        p(`class` := step, "2. Add SkillsJar dependencies"),
+        p(`class` := "text-gray-700 mb-1", browse,
+          "In ", code(`class` := codeInline, "build.sbt"), ", set the directory to extract skills into, and declare SkillsJars in the plugin's ",
+          code(`class` := codeInline, "Skills"), " configuration (add ", code(`class` := codeInline, "% Skills"),
+          " to the snippet), which keeps them off your compile and runtime classpath:"),
+        pre(`class` := codeBlock,
+          """|skillsJarsOutputDir := Some(file(".kiro/skills"))
+             |
+             |libraryDependencies += "com.skillsjars" % "SKILLJAR_ARTIFACT_ID" % "SKILLJAR_VERSION" % Skills""".stripMargin,
+        ),
+        p(`class` := step, "3. Extract skills"),
+        p(`class` := "text-gray-700 mb-1", "Run the extraction. It uses ", code(`class` := codeInline, "skillsJarsOutputDir"), ", or pass a directory:"),
+        pre(`class` := codeBlock, "sbt extractSkillsJars\nsbt \"extractSkillsJars .kiro/skills\""),
+      )),
+    ))
 
   private def searchForm(maybeQuery: Option[String], buildTool: BuildTool): Dom =
     form(
@@ -307,7 +526,7 @@ object UI:
       """.stripMargin
     )
 
-  def docs(tailwind: URL): Dom =
+  def docs(tailwind: URL, versions: PluginVersions): Dom =
     page(
       "SkillsJars - Docs",
       div(
@@ -361,55 +580,9 @@ object UI:
             "Most AI code assistants expect Agent Skills as files on the filesystem. The SkillsJars build plugins extract skills from your project dependencies into a directory your assistant can read.",
           ),
 
-          // Step 1 - Build Plugins
-          p(`class` := "font-semibold text-gray-800 mb-2", "1. Add the extraction plugin"),
-
-          p(`class` := "text-gray-700 mt-4 mb-1", "Gradle:"),
-          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
-            """|plugins {
-               |    id("com.skillsjars.gradle-plugin") version "0.0.2"
-               |}""".stripMargin,
-          ),
-
-          p(`class` := "text-gray-700 mb-1", "Maven:"),
-          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
-            """|<build>
-               |    <plugins>
-               |        <plugin>
-               |            <groupId>com.skillsjars</groupId>
-               |            <artifactId>maven-plugin</artifactId>
-               |            <version>0.0.7</version>
-               |            <dependencies>
-               |                <!-- Your SkillsJars -->
-               |                <dependency>
-               |                    <groupId>com.skillsjars</groupId>
-               |                    <artifactId>SKILLJAR_ARTIFACT_ID</artifactId>
-               |                    <version>SKILLJAR_VERSION</version>
-               |                </dependency>
-               |            </dependencies>
-               |        </plugin>
-               |    </plugins>
-               |</build>""".stripMargin,
-          ),
-
-          // Step 2 - Add SkillsJar dependencies
-          p(`class` := "font-semibold text-gray-800 mb-2", "2. Add SkillsJar dependencies"),
-          p(`class` := "text-gray-700 mb-4",
-            "Browse Agent Skills on ",
-            a(href := "/", `class` := "text-blue-600 hover:underline", "SkillsJars.com"),
-            " and add them to your project using the dependency snippet for your build tool.",
-          ),
-
-          // Step 3
-          p(`class` := "font-semibold text-gray-800 mb-2", "3. Extract skills"),
-          p(`class` := "text-gray-700 mb-1",
-            "Run the extraction command, specifying the directory your AI assistant expects:",
-          ),
-          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-2",
-            "# Gradle\n./gradlew extractSkillsJars -Pdir=.kiro/skills\n\n# Maven\n./mvnw skillsjars:extract -Ddir=.kiro/skills",
-          ),
+          buildToolTabs(versions),
           p(`class` := "text-sm text-gray-500 mb-4",
-            "Replace ", code(`class` := "bg-gray-100 px-1 rounded", ".kiro/skills"), " with the path your AI assistant uses for skills.",
+            "Replace ", code(`class` := codeInline, ".kiro/skills"), " with the path your AI assistant uses for skills.",
           ),
 
           // AGENTS.md
@@ -422,6 +595,42 @@ object UI:
               a(href := "/setup", `class` := "text-blue-600 hover:underline", "setup guide"),
               " includes a ready-to-paste ", code(`class` := "bg-blue-100 px-1 rounded", "AGENTS.md"), " snippet.",
             ),
+          ),
+        ),
+
+        // MCP
+        div(
+          `class` := "bg-white rounded-lg shadow p-6 mt-6",
+          h3(`class` := "text-xl font-bold text-gray-900 mb-3", "Skills over MCP"),
+          p(`class` := "text-gray-700 mb-4",
+            "SkillsJars.com runs an MCP server that serves the latest version of every SkillsJar listed on the site, with no build changes or extraction step. Use it with agents that support Skills over MCP. The server is stateless (Streamable HTTP) and needs no authentication:",
+          ),
+          pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4", mcpUrl),
+
+          p(`class` := "font-semibold text-gray-800 mb-2", "Add the server to your agent"),
+          div(`class` := "mb-4", mcpSetupTabs),
+
+          p(`class` := "font-semibold text-gray-800 mb-2", "How skills are served"),
+          ul(
+            `class` := "list-disc pl-6 text-gray-700 mb-4 space-y-1",
+            li(
+              "Agents that support the MCP Skills extension (", code(`class` := "bg-gray-100 px-1 rounded", "io.modelcontextprotocol/skills"),
+              ") discover skills with ", code(`class` := "bg-gray-100 px-1 rounded", "skills/list"),
+              " and ", code(`class` := "bg-gray-100 px-1 rounded", "skills/get"),
+              ", and browse a skill's files with ", code(`class` := "bg-gray-100 px-1 rounded", "resources/directory/read"), ".",
+            ),
+            li(
+              "Other MCP clients find each skill's ", code(`class` := "bg-gray-100 px-1 rounded", "SKILL.md"),
+              " in ", code(`class` := "bg-gray-100 px-1 rounded", "resources/list"),
+              " and read it, and the files beside it, with ", code(`class` := "bg-gray-100 px-1 rounded", "resources/read"), ".",
+            ),
+            li(
+              "Each skill is addressed by its directory in the JAR: ",
+              code(`class` := "bg-gray-100 px-1 rounded", "skill://<org>/<repo>/<skill>/SKILL.md"), ".",
+            ),
+          ),
+          p(`class` := "text-sm text-gray-500",
+            "Only the latest version of each SkillsJar is served. To pin versions or choose a subset of skills, declare SkillsJars in your build instead (see AI Code Assistants above).",
           ),
         ),
 
@@ -572,12 +781,12 @@ object UI:
             "Add the SkillsJars Maven plugin with the ", code(`class` := "bg-gray-100 px-1 rounded", "package"), " goal:",
           ),
           pre(`class` := "bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto mb-4",
-            """|<build>
+            s"""|<build>
                |    <plugins>
                |        <plugin>
                |            <groupId>com.skillsjars</groupId>
                |            <artifactId>maven-plugin</artifactId>
-               |            <version>0.0.7</version>
+               |            <version>${versions.maven}</version>
                |            <executions>
                |                <execution>
                |                    <goals>
