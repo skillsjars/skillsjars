@@ -109,13 +109,15 @@ object EndpointsSpec extends ZIOSpecDefault:
       test("the docs put each build tool in a tab, Maven first and selected"):
         defer:
           val (_, docs) = get("/docs", Some("text/html")).run
-          val positions = List("Maven", "Gradle", "sbt").map(tool => docs.indexOf(s">$tool</button>"))
+          val positions = List("Maven", "Gradle", "sbt", "No build (sjm)").map(tool => docs.indexOf(s">$tool</button>"))
           assertTrue(
             positions.forall(_ >= 0),
             positions == positions.sorted,
             panelTag(docs, "maven").exists(!_.contains("hidden")),
             panelTag(docs, "gradle").exists(_.contains("hidden")),
             panelTag(docs, "sbt").exists(_.contains("hidden")),
+            panelTag(docs, "sjm").exists(_.contains("hidden")),
+            docs.contains("sjm --dir .kiro/skills install anthropics__skills__pdf"),
           )
       ,
       // zio-http's Endpoint default when the header is absent; browsers and curl always send one.

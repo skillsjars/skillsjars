@@ -65,9 +65,10 @@ object Markdown:
         |
         |SkillsJars packages [Agent Skills](https://agentskills.io/) as JARs on Maven Central
         |under the `${Models.groupId}` groupId. This guide walks you (an AI coding agent) through
-        |wiring SkillsJars into a project: adding the extraction build plugin, choosing skills,
-        |extracting them onto the filesystem, and recording the workflow in `AGENTS.md` so it
-        |repeats on every checkout.
+        |wiring SkillsJars into a project: adding the extraction build plugin (or, for a project
+        |without a Maven, Gradle, or sbt build, the `sjm` CLI), choosing skills, extracting them
+        |onto the filesystem, and recording the workflow in `AGENTS.md` so it repeats on every
+        |checkout.
         |
         |## 1. Detect the project's build tool
         |
@@ -76,6 +77,8 @@ object Markdown:
         |- `pom.xml` present -> **Maven**
         |- `build.gradle` / `build.gradle.kts` / `settings.gradle(.kts)` present -> **Gradle**
         |- `build.sbt` present -> **sbt**
+        |- none of these -> **sjm**: follow [Projects without a JVM build](#projects-without-a-jvm-build-sjm)
+        |  instead of steps 2 to 5
         |
         |Only follow the one section that matches the project.
         |
@@ -236,4 +239,61 @@ object Markdown:
         |If the project uses a different agent instructions file (`CLAUDE.md`, `.cursorrules`,
         |`.github/copilot-instructions.md`, etc.), add the same guidance there instead of, or in
         |addition to, `AGENTS.md`.
+        |
+        |## Projects without a JVM build (sjm)
+        |
+        |[`sjm`](https://github.com/skillsjars/skillsjars-cli) (SkillsJars Manager) installs
+        |SkillsJars into any project, without a JVM or a build tool.
+        |
+        |### Install sjm
+        |
+        |Skip this if `sjm --version` already works.
+        |
+        |```bash
+        |# Linux (x64, arm64; glibc) and macOS (Apple silicon)
+        |curl -fsSL https://raw.githubusercontent.com/skillsjars/skillsjars-cli/main/install.sh | sh
+        |```
+        |
+        |```powershell
+        |# Windows (x64), in PowerShell
+        |irm https://raw.githubusercontent.com/skillsjars/skillsjars-cli/main/install.ps1 | iex
+        |```
+        |
+        |### Choose and install SkillsJars
+        |
+        |Find skills with `sjm search KEYWORD`, or with the markdown catalog in step 3. Install each
+        |one by its artifactId (the latest version), giving the directory your agent reads skills
+        |from (e.g. `.kiro/skills` or `.claude/skills`). Without `--dir`, skills go to
+        |`.agents/skills`, the folder agents that follow the Agent Skills conventions read:
+        |
+        |```bash
+        |sjm search pdf
+        |sjm --dir .kiro/skills install anthropics__skills__pdf
+        |```
+        |
+        |A SkillsJar outside `com.skillsjars` is named `groupId:artifactId`, e.g.
+        |`sjm install com.jamesward:skills`.
+        |
+        |`sjm install` writes `skillsjars.json`, which pins the exact versions and the skills
+        |directory: commit it. Add the skills directory to `.gitignore`, since `sjm install`
+        |rebuilds it.
+        |
+        |> Security note: Agent Skills can do harmful things. Vet each skill before adding it — the
+        |> automated scan on SkillsJars.com is not a substitute for review.
+        |
+        |### Record the workflow in AGENTS.md
+        |
+        |Merge the following into `AGENTS.md` (or the project's agent instructions file), adjusting
+        |the skills directory:
+        |
+        |    ## Agent Skills (SkillsJars)
+        |
+        |    This project pulls in Agent Skills as SkillsJars, pinned in `skillsjars.json`. Before
+        |    working, extract them with sjm (https://github.com/skillsjars/skillsjars-cli):
+        |
+        |        sjm install
+        |
+        |    Read the extracted `SKILL.md` files under `.kiro/skills/` and follow any that are
+        |    relevant to the task. To add more skills, browse $siteUrl or run `sjm search`, then
+        |    `sjm install <artifactId>`.
         |""".stripMargin

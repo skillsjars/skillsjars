@@ -321,6 +321,38 @@ object UI:
         p(`class` := "text-gray-700 mb-1", "Run the extraction. It uses ", code(`class` := codeInline, "skillsJarsOutputDir"), ", or pass a directory:"),
         pre(`class` := codeBlock, "sbt extractSkillsJars\nsbt \"extractSkillsJars .kiro/skills\""),
       )),
+      Tab("sjm", "No build (sjm)", div(
+        p(`class` := "text-gray-700 mb-4",
+          a(href := "https://github.com/skillsjars/skillsjars-cli", `class` := "text-blue-600 hover:underline", "sjm"),
+          " (SkillsJars Manager) installs SkillsJars into any project, without a JVM or a build tool.",
+        ),
+        p(`class` := step, "1. Install sjm"),
+        pre(`class` := codeBlock,
+          """|# Linux (x64, arm64; glibc) and macOS (Apple silicon)
+             |curl -fsSL https://raw.githubusercontent.com/skillsjars/skillsjars-cli/main/install.sh | sh
+             |
+             |# Windows (x64), in PowerShell
+             |irm https://raw.githubusercontent.com/skillsjars/skillsjars-cli/main/install.ps1 | iex""".stripMargin,
+        ),
+        p(`class` := step, "2. Add SkillsJars"),
+        p(`class` := "text-gray-700 mb-1",
+          "Find skills on ", a(href := "/", `class` := "text-blue-600 hover:underline", "SkillsJars.com"),
+          " or with ", code(`class` := codeInline, "sjm search"), ", and install each one by its artifactId, giving the directory your AI assistant expects:",
+        ),
+        pre(`class` := codeBlock,
+          """|sjm search pdf
+             |sjm --dir .kiro/skills install anthropics__skills__pdf""".stripMargin,
+        ),
+        p(`class` := "text-gray-700 mb-4",
+          code(`class` := codeInline, "sjm install"), " writes ", code(`class` := codeInline, "skillsjars.json"),
+          ", which pins the versions and the skills directory. Commit it, and add the skills directory to ",
+          code(`class` := codeInline, ".gitignore"), ". Without ", code(`class` := codeInline, "--dir"),
+          ", skills go to ", code(`class` := codeInline, ".agents/skills"), ".",
+        ),
+        p(`class` := step, "3. Extract skills"),
+        p(`class` := "text-gray-700 mb-1", "After a checkout, extract everything in ", code(`class` := codeInline, "skillsjars.json"), ":"),
+        pre(`class` := codeBlock, "sjm install"),
+      )),
     ))
 
   private def searchForm(maybeQuery: Option[String], buildTool: BuildTool): Dom =
@@ -577,7 +609,7 @@ object UI:
           `class` := "bg-white rounded-lg shadow p-6 mt-6",
           h3(`class` := "text-xl font-bold text-gray-900 mb-3", "AI Code Assistants"),
           p(`class` := "text-gray-700 mb-4",
-            "Most AI code assistants expect Agent Skills as files on the filesystem. The SkillsJars build plugins extract skills from your project dependencies into a directory your assistant can read.",
+            "Most AI code assistants expect Agent Skills as files on the filesystem. The SkillsJars build plugins extract skills from your project dependencies into a directory your assistant can read. For a project without a Maven, Gradle, or sbt build, the sjm CLI does the same.",
           ),
 
           buildToolTabs(versions),
