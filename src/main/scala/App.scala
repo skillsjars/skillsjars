@@ -7,16 +7,21 @@ import zio.http.*
 
 object App extends ZIOAppDefault:
 
-  private def acceptsMarkdown(request: Request): Boolean =
-    Markdown.accepts(request.headers.rawHeader("accept"))
+  private def searchHandler(maybeQuery: Option[String], maybeBuildTool: Option[BuildTool]): ZIO[SkillsJarCache, SkillsJarService.ServiceError, Endpoints.SearchResults] =
+    val query = maybeQuery.filter(_.nonEmpty)
+    // Maven is the UI's default build tool selection.
+    val buildTool = maybeBuildTool.getOrElse(BuildTool.Maven)
+    query.fold(SkillsJarService.list)(SkillsJarService.search)
+      .map(Endpoints.SearchResults(query, _, buildTool))
+      .tapErrorCause(cause => ZIO.logErrorCause(s"search failed q=$query", cause))
 
-  private def indexHandler(request: Request, buildTool: BuildTool, tailwind: URL): ZIO[SkillsJarCache, SkillsJarService.ServiceError, Response] =
-    defer:
-      val maybeQuery = request.queryParam("q").filter(_.nonEmpty)
-      val skillsJars = maybeQuery.fold(SkillsJarService.list)(SkillsJarService.search).run
-      if acceptsMarkdown(request) then Markdown.response(Markdown.skillsList(skillsJars, maybeQuery))
-      else Response.html(UI.index(skillsJars, maybeQuery, buildTool, tailwind))
-
+  private def latestHandler(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): ZIO[SkillsJarCache, SkillsJarService.ServiceError | SkillsJarService.NotFound, Endpoints.LatestVersion] =
+    SkillsJarService.latest(groupId, artifactId)
+      .map(Endpoints.LatestVersion(groupId, artifactId, _))
+      .tapErrorCause: cause =>
+        cause.failureOption match
+          case Some(_: SkillsJarService.NotFound) => ZIO.logWarning(s"latest not found $groupId:$artifactId")
+          case _ => ZIO.logErrorCause(s"latest failed $groupId:$artifactId", cause)
 
   private def deployHandler[A : Tag](request: Request, tailwind: URL): ZIO[DeployJobs & Deployer[A] & A & Client & MavenCentralRepo & HerokuInference, Nothing, Response] =
     defer:
@@ -56,14 +61,8 @@ object App extends ZIOAppDefault:
     val tailwind = webJars.url("tailwindcss__browser", "/dist/index.global.js")
 
     Routes(
-      Method.GET / Root -> Handler.fromFunctionZIO[Request]: request =>
-        val buildTool = BuildTool.fromParam(request.queryParam("bt").getOrElse("maven"))
-        indexHandler(request, buildTool, tailwind).catchAll: error =>
-          if acceptsMarkdown(request) then
-            ZIO.succeed(Markdown.response(Markdown.skillsList(Seq.empty, None)))
-          else
-            ZIO.succeed(Response.html(UI.index(Seq.empty, None, buildTool, tailwind, Some(error))))
-      ,
+      Endpoints.search(tailwind).implement(searchHandler),
+      Endpoints.latest.implement(latestHandler),
       Method.GET / "setup" -> handler(Markdown.response(Markdown.setup)),
       Method.GET / "docs" -> handler(Response.html(UI.docs(tailwind))),
       Method.GET / "favicon.ico" -> Handler.fromResource("public/favicon.ico").orDie,

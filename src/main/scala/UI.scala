@@ -792,6 +792,20 @@ object UI:
           tailwind,
         )
 
+  def requestError(reason: String, tailwind: URL): Dom =
+    page(
+      "Invalid Request",
+      div(
+        a(href := "/", `class` := "text-blue-600 hover:underline mb-4 inline-block", "Back to list"),
+        div(
+          `class` := "bg-red-50 border border-red-200 rounded-lg p-4 mt-4",
+          p(`class` := "font-semibold text-red-800", "Invalid request"),
+          p(`class` := "text-sm text-red-700 mt-1", reason),
+        ),
+      ),
+      tailwind,
+    )
+
   def formError(reason: String, tailwind: URL): Dom =
     page(
       "Deploy Error",

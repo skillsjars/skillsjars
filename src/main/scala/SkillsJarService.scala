@@ -29,6 +29,19 @@ object SkillsJarService:
       all.filter: sj =>
         sj.name.toLowerCase.contains(lower) || sj.description.toLowerCase.contains(lower)
 
+  case class NotFound(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId)
+
+  def latest(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): ZIO[SkillsJarCache, ServiceError | NotFound, MavenCentral.Version] =
+    defer:
+      val all = list.run
+      ZIO.fromOption(latestOf(all, groupId, artifactId)).orElseFail(NotFound(groupId, artifactId)).run
+
+  // The head of `versions` is the latest, matching how UI and Markdown pick the version for snippets.
+  def latestOf(skillsJars: Seq[SkillsJar], groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId): Option[MavenCentral.Version] =
+    skillsJars
+      .find(sj => sj.groupId == groupId && sj.artifactId == artifactId)
+      .flatMap(_.versions.headOption)
+
   def exists(groupId: MavenCentral.GroupId, artifactId: MavenCentral.ArtifactId, version: MavenCentral.Version): ZIO[MavenCentralRepo, Throwable, Boolean] =
     MavenCentral.artifactExists(groupId, artifactId, version)
 

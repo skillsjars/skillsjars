@@ -129,11 +129,10 @@ object Models:
     case Sbt extends BuildTool("sbt", "sbt")
 
   object BuildTool:
-    def fromParam(s: String): BuildTool = s.toLowerCase match
-      case "gradle" => BuildTool.Gradle
-      case "sbt" => BuildTool.Sbt
-      case "maven" => BuildTool.Maven
-      case _ => throw new IllegalArgumentException(s"Invalid build tool: $s")
+    def parse(s: String): Either[String, BuildTool] =
+      BuildTool.values.find(_.param == s.toLowerCase).toRight(s"Invalid build tool: $s")
+
+    given Schema[BuildTool] = Schema[String].transformOrFail(parse, bt => Right(bt.param))
 
   given CanEqual[Org, Org] = CanEqual.derived
   given CanEqual[Repo, Repo] = CanEqual.derived
