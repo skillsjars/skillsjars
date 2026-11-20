@@ -17,7 +17,7 @@ scalacOptions ++= Seq(
   // "-Xfatal-warnings", // doesn't seem to work anymore
 )
 
-scalaVersion := "3.10.0"
+scalaVersion := "3.10.1"
 
 Test / fork := true
 
@@ -26,22 +26,22 @@ val zioVersion = "2.1.27"
 libraryDependencies ++= Seq(
   "dev.zio" %% "zio"                    % zioVersion,
   "dev.zio" %% "zio-concurrent"         % zioVersion,
-  "dev.zio" %% "zio-cache"              % "0.3.0",
-  "dev.zio" %% "zio-logging"            % "2.5.3",
+  "dev.zio" %% "zio-cache"              % "0.4.1",
+  "dev.zio" %% "zio-logging"            % "2.5.5",
   "dev.zio" %% "zio-direct"             % "1.0.0-RC7",
   "dev.zio" %% "zio-http"               % "3.11.6",
   "com.jamesward" %% "zio-http-mcp"     % "0.13.4",
-  "com.jamesward" %% "zio-mavencentral" % "0.15.0",
+  "com.jamesward" %% "zio-mavencentral" % "0.17.0",
   // Previously transitive via zio-mavencentral <= 0.5.4; now declared
   // directly because zio-mavencentral dropped its zip dep.
-  "dev.zio" %% "zio-streams-compress-zip" % "2.1.7",
+  "dev.zio" %% "zio-streams-compress-zip" % "3.0.1",
 
   "org.eclipse.jgit" % "org.eclipse.jgit" % "7.8.1.202611041320-r",
 
   "org.scala-lang.modules" %% "scala-xml" % "2.5.0",
   "org.virtuslab" %% "scala-yaml" % "0.3.3",
-  "dev.zio" %% "zio-config"           % "4.1.0",
-  "dev.zio" %% "zio-config-typesafe"  % "4.1.0",
+  "dev.zio" %% "zio-config"           % "4.1.2",
+  "dev.zio" %% "zio-config-typesafe"  % "4.1.2",
 
   "org.webjars" % "webjars-locator-lite" % "1.1.5",
   "org.webjars.npm" % "tailwindcss__browser" % "4.3.4",
@@ -58,5 +58,5 @@ Test / run / mainClass := Some("TestApp")
 // SkillsJars — Agent Skills unpacked onto the filesystem (see AGENTS.md).
 // Declared in the plugin's `Skills` config so they stay off the compile/runtime classpath.
 skillsJarsOutputDir := Some(file(".kiro/skills"))
-libraryDependencies += "com.jamesward" % "skills" % "0.0.24" % Skills
+libraryDependencies += "com.jamesward" % "skills" % "0.0.27" % Skills
 
