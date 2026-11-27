@@ -1,5 +1,5 @@
 import com.jamesward.zio_mavencentral.MavenCentral
-import com.jamesward.zio_mavencentral.MavenCentral.{MavenCentralRepo, Version}
+import com.jamesward.zio_mavencentral.MavenCentral.{Listed, MavenCentralRepo, RequestKind, Version}
 import zio.*
 import zio.http.*
 import zio.test.*
@@ -8,7 +8,7 @@ object PluginVersionsSpec extends ZIOSpecDefault:
 
   /** Serves `maven-metadata.xml` for the artifacts in `versions`; anything else is a 404. */
   final case class FakeRepo(versions: Map[String, Seq[String]]) extends MavenCentralRepo:
-    def request(path: Path, method: Method, headers: Headers, content: Body): ZIO[Any, Throwable, (Response, URL)] =
+    def request(path: Path, method: Method, headers: Headers, content: Body, kind: RequestKind): ZIO[Any, Throwable, (Response, URL)] =
       val segments = path.segments.toList
       val response = segments.reverse match
         case "maven-metadata.xml" :: artifactId :: _ =>
@@ -16,6 +16,14 @@ object PluginVersionsSpec extends ZIOSpecDefault:
             Response.text(s"<metadata><versioning><versions>${vs.map(v => s"<version>$v</version>").mkString}</versions></versioning></metadata>")
         case _ => Response.status(Status.NotFound)
       ZIO.succeed(response -> URL.empty)
+
+    def streaming(path: Path, method: Method, headers: Headers, kind: RequestKind): ZIO[Scope, Throwable, (Response, URL)] =
+      ZIO.dieMessage("streaming is not used by PluginVersions")
+
+    def list(path: Path, timeout: Duration): ZIO[Any, Throwable, Listed] =
+      ZIO.dieMessage("list is not used by PluginVersions")
+
+    def rateLimited: UIO[Long] = ZIO.succeed(0L)
 
   private def repo(versions: Map[String, Seq[String]]): ULayer[MavenCentralRepo] = ZLayer.succeed(FakeRepo(versions))
 
